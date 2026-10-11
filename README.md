@@ -115,6 +115,21 @@ model = T5ForConditionalGeneration.from_pretrained("google/flan-t5-xl")
 ```
 These three lines will download flan-t5-xl to your ~/.cache/huggingface directory.
 
+### Modulation-Edit offset experiments
+
+This fork includes the original `module_space` AdaLN-offset optimizer, the
+reference-image folders in `contents/` and `styles/`, and reproducible Vast.ai
+setup scripts. See [VASTAI_SETUP.md](VASTAI_SETUP.md) for environment and weight
+installation. After setup, run for example:
+
+```bash
+bash scripts/run_contents_offset.sh dog
+```
+
+The launcher uses one image per optimizer step, gradient accumulation 1, and
+400 steps by default. Model checkpoints remain local under `weights/` and are
+not committed to GitHub.
+
 ## 🎨 Data Preparation
 The structure of the training dataset is listed as bellow. The training dataset contains a list of json files with name "[h_div_w_template1]_[num_examples].jsonl". Here [h_div_w_template] is a float number, which is the template ratio of height to width of the image. [num_examples] is the number of examples where $h/w$ is around h_div_w_template. [dataset_t2i_iterable.py](infinity/dataset/dataset_t2i_iterable.py) supports traing with >100M examples. But we have to specify the number of examples for each h/w template ratio in the filename.
 

@@ -46,3 +46,10 @@ ref.py
 wandb
 .DS_Store
 .venv/
+
+# The experiment reference data is intentionally versioned in this fork.
+# Keep generated results and model checkpoints ignored.
+!contents/
+!contents/**
+!styles/
+!styles/**
