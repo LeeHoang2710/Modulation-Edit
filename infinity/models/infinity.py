@@ -533,6 +533,8 @@ class Infinity(nn.Module):
         inference_mode=False,
         save_img_path=None,
         sampling_per_bits=1,
+        hybrid_label_B_or_BLT=None,
+        hybrid_start_scale=None,
     ):   # returns List[idx_Bl]
         if g_seed is None: rng = None
         else: self.rng.manual_seed(g_seed); rng = self.rng
@@ -546,34 +548,64 @@ class Infinity(nn.Module):
         else:
             vae_scale_schedule = scale_schedule
         
-        kv_compact, lens, cu_seqlens_k, max_seqlen_k = label_B_or_BLT
-        if any(np.array(cfg_list) != 1):
-            bs = 2*B
-            if not negative_label_B_or_BLT:
-                kv_compact_un = kv_compact.clone()
-                total = 0
-                for le in lens:
-                    kv_compact_un[total:total+le] = (self.cfg_uncond)[:le]
-                    total += le
-                kv_compact = torch.cat((kv_compact, kv_compact_un), dim=0)
-                cu_seqlens_k = torch.cat((cu_seqlens_k, cu_seqlens_k[1:]+cu_seqlens_k[-1]), dim=0)
+        def prepare_condition(label_tuple, use_cfg, negative_tuple=None):
+            kv, lens, cu_seqlens, max_seqlen = label_tuple
+            kv = kv.clone()
+            if use_cfg:
+                if negative_tuple is None:
+                    kv_un = kv.clone()
+                    total = 0
+                    for le in lens:
+                        kv_un[total:total + le] = self.cfg_uncond[:le]
+                        total += le
+                    kv = torch.cat((kv, kv_un), dim=0)
+                    cu_seqlens = torch.cat(
+                        (cu_seqlens, cu_seqlens[1:] + cu_seqlens[-1]), dim=0
+                    )
+                else:
+                    kv_un, lens_un, cu_un, max_un = negative_tuple
+                    kv = torch.cat((kv, kv_un), dim=0)
+                    cu_seqlens = torch.cat(
+                        (cu_seqlens, cu_un[1:] + cu_seqlens[-1]), dim=0
+                    )
+                    max_seqlen = max(max_seqlen, max_un)
+                batch_size = 2 * B
             else:
-                kv_compact_un, lens_un, cu_seqlens_k_un, max_seqlen_k_un = negative_label_B_or_BLT
-                kv_compact = torch.cat((kv_compact, kv_compact_un), dim=0)
-                cu_seqlens_k = torch.cat((cu_seqlens_k, cu_seqlens_k_un[1:]+cu_seqlens_k[-1]), dim=0)
-                max_seqlen_k = max(max_seqlen_k, max_seqlen_k_un)
+                batch_size = B
+
+            kv = self.text_norm(kv)
+            cond = self.text_proj_for_sos((kv, cu_seqlens, max_seqlen))
+            ca = self.text_proj_for_ca(kv)
+            with torch.amp.autocast('cuda', enabled=False):
+                gss = self.shared_ada_lin(cond.float()).float().contiguous()
+            return {
+                'cond_BD': cond,
+                'ca_kv': (ca, cu_seqlens, max_seqlen),
+                'gss': gss,
+                'sos': cond,
+                'bs': batch_size,
+            }
+
+        is_hybrid = hybrid_label_B_or_BLT is not None
+        if is_hybrid:
+            assert hybrid_start_scale is not None
+            hybrid_start_scale = int(hybrid_start_scale)
+            assert 0 <= hybrid_start_scale <= len(scale_schedule)
+            base_state = prepare_condition(label_B_or_BLT, use_cfg=False)
+            hybrid_state = prepare_condition(hybrid_label_B_or_BLT, use_cfg=True)
+            active_state = base_state if hybrid_start_scale > 0 else hybrid_state
         else:
-            bs = B
+            use_cfg = any(np.array(cfg_list) != 1)
+            active_state = prepare_condition(
+                label_B_or_BLT, use_cfg=use_cfg,
+                negative_tuple=negative_label_B_or_BLT,
+            )
 
-        kv_compact = self.text_norm(kv_compact)
-        sos = cond_BD = self.text_proj_for_sos((kv_compact, cu_seqlens_k, max_seqlen_k)) # sos shape: [2, 4096] project to K and V of SOS  for Cross-Attention.
-        kv_compact = self.text_proj_for_ca(kv_compact) # kv_compact shape: [304, 4096]
-        ca_kv = kv_compact, cu_seqlens_k, max_seqlen_k
-        last_stage = sos.unsqueeze(1).expand(bs, 1, -1) + self.pos_start.expand(bs, 1, -1) # Last stage shape: [2, 1, 4096]
-
-        with torch.amp.autocast('cuda', enabled=False):
-            cond_BD_or_gss = self.shared_ada_lin(cond_BD.float()).float().contiguous()
-        gss_wo_offset = cond_BD_or_gss   # the offset (if any) is added per scale in the loop below
+        cond_BD = active_state['cond_BD']
+        ca_kv = active_state['ca_kv']
+        gss_wo_offset = active_state['gss']
+        bs = active_state['bs']
+        last_stage = active_state['sos'].unsqueeze(1).expand(bs, 1, -1) + self.pos_start.expand(bs, 1, -1)
         accu_BChw, cur_L, ret = None, 0, []  # current length, list of reconstructed images
         idx_Bl_list, idx_Bld_list = [], []
 
@@ -605,6 +637,16 @@ class Infinity(nn.Module):
             cfg = cfg_list[si]
             if si >= trunk_scale:
                 break
+            if is_hybrid and si == hybrid_start_scale:
+                # The null-conditioned prefix was generated with one branch.
+                # Duplicate it before switching to text CFG so both branches
+                # start from exactly the same visual history.
+                last_stage = torch.cat((last_stage[:B], last_stage[:B]), dim=0)
+                active_state = hybrid_state
+                cond_BD = active_state['cond_BD']
+                ca_kv = active_state['ca_kv']
+                gss_wo_offset = active_state['gss']
+                bs = active_state['bs']
             cur_L += np.array(pn).prod()
 
             need_to_pad = 0

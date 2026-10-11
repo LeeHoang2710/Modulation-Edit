@@ -136,9 +136,26 @@ def shuffled_batches(num_items, batch_size, seed):
 
 
 @torch.no_grad()
-def generate(infinity, vae, text_cond_tuple, scale_schedule, args, seed, negative=None):
+def generate(
+    infinity,
+    vae,
+    text_cond_tuple,
+    scale_schedule,
+    args,
+    seed,
+    negative=None,
+    hybrid_text_cond=None,
+):
     infinity.eval()
-    cfg_list = [args.cfg] * len(scale_schedule)
+    if hybrid_text_cond is None:
+        cfg_list = [args.cfg] * len(scale_schedule)
+        hybrid_start_scale = None
+    else:
+        hybrid_start_scale = args.hybrid_start_scale
+        cfg_list = [
+            1.0 if si < hybrid_start_scale else args.hybrid_cfg
+            for si in range(len(scale_schedule))
+        ]
     tau_list = [args.tau] * len(scale_schedule)
     with torch.autocast('cuda', dtype=torch.bfloat16):
         _, _, img_list = infinity.autoregressive_infer_cfg(
@@ -146,6 +163,8 @@ def generate(infinity, vae, text_cond_tuple, scale_schedule, args, seed, negativ
             B=1, negative_label_B_or_BLT=negative, cfg_list=cfg_list, tau_list=tau_list,
             top_k=args.top_k, top_p=args.top_p, returns_vemb=1, cfg_insertion_layer=[args.cfg_insertion_layer],
             vae_type=args.vae_type, ret_img=True, inference_mode=True, sampling_per_bits=args.sampling_per_bits,
+            hybrid_label_B_or_BLT=hybrid_text_cond,
+            hybrid_start_scale=hybrid_start_scale,
         )
     return img_list[0].cpu().numpy()  # H W 3, uint8, BGR
 
@@ -259,7 +278,14 @@ def infer(args, infinity, vae, device):
     h_div_w = args.h_div_w_template if args.h_div_w_template > 0 else ckpt.get('h_div_w_template', 1.0)
     _, scale_schedule, _ = get_scale_schedule(args, h_div_w)
     set_offset_infer_scales(infinity, args.offset_infer_scales, len(scale_schedule))
-    if args.prompt:
+    hybrid_text_cond = None
+    if args.hybrid_prompt:
+        if args.hybrid_start_scale < 0:
+            raise ValueError('--hybrid_start_scale is required when --hybrid_prompt is used')
+        text_tokenizer, text_encoder = load_tokenizer(t5_path=args.text_encoder_ckpt)
+        hybrid_text_cond = encode_prompt(text_tokenizer, text_encoder, args.hybrid_prompt)
+        conds = [('<hybrid:null->%s>' % args.hybrid_prompt, get_null_text_cond(infinity, 1, null_len))]
+    elif args.prompt:
         text_tokenizer, text_encoder = load_tokenizer(t5_path=args.text_encoder_ckpt)
         conds = [(p, encode_prompt(text_tokenizer, text_encoder, p)) for p in args.prompt.split('|')]
     else:
@@ -267,7 +293,18 @@ def infer(args, infinity, vae, device):
     rows = []
     for prompt, text_cond_tuple in conds:
         print(f'[infer] offset={args.offset_path} x{args.offset_scale} on scales {args.offset_infer_scales}, prompt={prompt!r}, cfg={args.cfg}')
-        rows.append([generate(infinity, vae, text_cond_tuple, scale_schedule, args, args.seed + i) for i in range(args.num_samples)])
+        rows.append([
+            generate(
+                infinity,
+                vae,
+                text_cond_tuple,
+                scale_schedule,
+                args,
+                args.seed + i,
+                hybrid_text_cond=hybrid_text_cond,
+            )
+            for i in range(args.num_samples)
+        ])
     if ckpt.get('images'):  # bottom row: the images the offset was trained on
         tgt_h, tgt_w = scale_schedule[-1][1] * 16, scale_schedule[-1][2] * 16
         rows.append(reference_row([transform(Image.open(p).convert('RGB'), tgt_h, tgt_w) for p in ckpt['images']]))
@@ -325,6 +362,9 @@ if __name__ == '__main__':
     parser.add_argument('--offset_path', type=str, default='', help='learned offset (infer mode)')
     parser.add_argument('--offset_scale', type=float, default=1.0, help='multiply the learned offset at inference')
     parser.add_argument('--prompt', type=str, default='', help="infer mode: prompt(s) separated by '|' the offset is added on top of (default: null text)")
+    parser.add_argument('--hybrid_prompt', type=str, default='', help='infer mode: use null cfg_uncond for early scales, then this text condition for later scales')
+    parser.add_argument('--hybrid_start_scale', type=int, default=-1, help='first scale using --hybrid_prompt; e.g. 4 after optimizing scales 0-3')
+    parser.add_argument('--hybrid_cfg', type=float, default=3.0, help='CFG value used after --hybrid_start_scale')
     parser.add_argument('--num_samples', type=int, default=4, help='samples per prompt (seeds seed .. seed+n-1)')
     parser.add_argument('--save_file', type=str, default='./ada_offset_samples.jpg')
     parser.add_argument('--top_k', type=int, default=900)

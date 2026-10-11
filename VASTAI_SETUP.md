@@ -102,6 +102,30 @@ Run it with:
 bash scripts/run_contents_offset.sh dog
 ```
 
+For the hybrid experiment—learn the first four scales with null conditioning,
+then use a text prompt for later scales—run:
+
+```bash
+bash scripts/run_hybrid_contents_offset.sh dog
+```
+
+The default hybrid settings are:
+
+```text
+learned scales: 0-3
+text-conditioned scales: 4-12
+later prompt: "is sleeping"
+CFG after the switch: 3
+```
+
+You can change the prompt or boundary:
+
+```bash
+HYBRID_PROMPT="is sleeping on a beach" \\
+HYBRID_START_SCALE=4 \\
+bash scripts/run_hybrid_contents_offset.sh dog
+```
+
 For another subject:
 
 ```bash
