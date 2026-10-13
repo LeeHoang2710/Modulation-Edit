@@ -535,6 +535,8 @@ class Infinity(nn.Module):
         sampling_per_bits=1,
         hybrid_label_B_or_BLT=None,
         hybrid_start_scale=None,
+        hybrid_blend_start_scale=None,
+        hybrid_blend_end_scale=None,
     ):   # returns List[idx_Bl]
         if g_seed is None: rng = None
         else: self.rng.manual_seed(g_seed); rng = self.rng
@@ -587,13 +589,21 @@ class Infinity(nn.Module):
             }
 
         is_hybrid = hybrid_label_B_or_BLT is not None
+        is_hybrid_blend = hybrid_blend_start_scale is not None or hybrid_blend_end_scale is not None
         if is_hybrid:
-            assert hybrid_start_scale is not None
-            hybrid_start_scale = int(hybrid_start_scale)
-            assert 0 <= hybrid_start_scale <= len(scale_schedule)
+            if is_hybrid_blend:
+                assert hybrid_start_scale is None, 'hard hybrid switching and ca_kv blending are mutually exclusive'
+                assert hybrid_blend_start_scale is not None and hybrid_blend_end_scale is not None
+                hybrid_blend_start_scale = int(hybrid_blend_start_scale)
+                hybrid_blend_end_scale = int(hybrid_blend_end_scale)
+                assert 0 <= hybrid_blend_start_scale <= hybrid_blend_end_scale < len(scale_schedule)
+            else:
+                assert hybrid_start_scale is not None
+                hybrid_start_scale = int(hybrid_start_scale)
+                assert 0 <= hybrid_start_scale <= len(scale_schedule)
             base_state = prepare_condition(label_B_or_BLT, use_cfg=False)
             hybrid_state = prepare_condition(hybrid_label_B_or_BLT, use_cfg=True)
-            active_state = base_state if hybrid_start_scale > 0 else hybrid_state
+            active_state = hybrid_state if is_hybrid_blend else (base_state if hybrid_start_scale > 0 else hybrid_state)
         else:
             use_cfg = any(np.array(cfg_list) != 1)
             active_state = prepare_condition(
@@ -608,6 +618,24 @@ class Infinity(nn.Module):
         last_stage = active_state['sos'].unsqueeze(1).expand(bs, 1, -1) + self.pos_start.expand(bs, 1, -1)
         accu_BChw, cur_L, ret = None, 0, []  # current length, list of reconstructed images
         idx_Bl_list, idx_Bld_list = [], []
+
+        def blend_prompt_ca_kv(alpha):
+            """Blend conditional text K/V toward cfg_uncond, keeping CFG's null half unchanged."""
+            ca, cu_seqlens, max_seqlen = hybrid_state['ca_kv']
+            blended = ca.clone()
+            # prepare_condition(use_cfg=True) stores [prompt_0..prompt_B-1, null_0..null_B-1].
+            for bi in range(B):
+                text_start = int(cu_seqlens[bi])
+                text_end = int(cu_seqlens[bi + 1])
+                null_start = int(cu_seqlens[B + bi])
+                null_end = int(cu_seqlens[B + bi + 1])
+                if (text_end - text_start) != (null_end - null_start):
+                    raise ValueError('Prompt and cfg_uncond token lengths must match for ca_kv blending')
+                blended[text_start:text_end] = (
+                    (1.0 - alpha) * ca[null_start:null_end]
+                    + alpha * ca[text_start:text_end]
+                )
+            return blended, cu_seqlens, max_seqlen
 
         if inference_mode:
             for b in self.unregistered_blocks: (b.sa if isinstance(b, CrossAttnBlock) else b.attn).kv_caching(True)
@@ -633,15 +661,44 @@ class Infinity(nn.Module):
         
         num_stages_minus_1 = len(scale_schedule)-1
         summed_codes = 0
+
+        def duplicate_cached_attention_batch():
+            """Expand cached prefix K/V from B rows to 2B rows for CFG."""
+            for block_chunk in self.block_chunks:
+                for module in block_chunk.module:
+                    attention = module.sa if hasattr(module, 'sa') else module.attn
+                    if attention.cached_k is not None:
+                        attention.cached_k = torch.cat(
+                            (attention.cached_k, attention.cached_k), dim=0
+                        )
+                        attention.cached_v = torch.cat(
+                            (attention.cached_v, attention.cached_v), dim=0
+                        )
+
         for si, pn in enumerate(scale_schedule):   # si: i-th segment
             cfg = cfg_list[si]
             if si >= trunk_scale:
                 break
-            if is_hybrid and si == hybrid_start_scale:
+            if is_hybrid and is_hybrid_blend:
+                if si <= hybrid_blend_start_scale:
+                    prompt_alpha = 0.0
+                elif si >= hybrid_blend_end_scale:
+                    prompt_alpha = 1.0
+                else:
+                    prompt_alpha = (si - hybrid_blend_start_scale) / float(
+                        hybrid_blend_end_scale - hybrid_blend_start_scale
+                    )
+                active_state = hybrid_state
+                cond_BD = active_state['cond_BD']
+                ca_kv = blend_prompt_ca_kv(prompt_alpha)
+                gss_wo_offset = active_state['gss']
+                bs = active_state['bs']
+            elif is_hybrid and si == hybrid_start_scale:
                 # The null-conditioned prefix was generated with one branch.
                 # Duplicate it before switching to text CFG so both branches
                 # start from exactly the same visual history.
                 last_stage = torch.cat((last_stage[:B], last_stage[:B]), dim=0)
+                duplicate_cached_attention_batch()
                 active_state = hybrid_state
                 cond_BD = active_state['cond_BD']
                 ca_kv = active_state['ca_kv']

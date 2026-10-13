@@ -17,6 +17,7 @@ GRAD_ACCUM="${GRAD_ACCUM:-2}"
 LR="${LR:-5e-3}"
 LOSS_SCALES="${LOSS_SCALES:-0-3}"
 HYBRID_START_SCALE="${HYBRID_START_SCALE:-4}"
+HYBRID_ALL_SCALES="${HYBRID_ALL_SCALES:-0}"
 HYBRID_PROMPT="${HYBRID_PROMPT:-is sleeping}"
 HYBRID_CFG="${HYBRID_CFG:-3}"
 OFFSET_MODE="${OFFSET_MODE:-per_scale}"
@@ -92,17 +93,23 @@ echo "Optimizing scales ${LOSS_SCALES} for ${SUBJECT}"
     2>&1 | tee "${OUT_DIR}/optimize.log"
 
 echo "Hybrid inference: first text-conditioned scale=${HYBRID_START_SCALE}, prompt=${HYBRID_PROMPT@Q}"
-"${PYTHON_BIN[@]}" tools/optimize_ada_offset.py \
-    --mode infer \
-    "${COMMON_ARGS[@]}" \
-    --text_encoder_ckpt "${TEXT_ENCODER}" \
-    --offset_path "${OUT_DIR}/offset.pth" \
-    --offset_infer_scales "${LOSS_SCALES}" \
-    --hybrid_prompt "${HYBRID_PROMPT}" \
-    --hybrid_start_scale "${HYBRID_START_SCALE}" \
-    --hybrid_cfg "${HYBRID_CFG}" \
-    --num_samples "${NUM_SAMPLES}" \
-    --save_file "${OUT_DIR}/hybrid_reconstruction.jpg" \
+INFER_ARGS=(
+    --mode infer
+    "${COMMON_ARGS[@]}"
+    --text_encoder_ckpt "${TEXT_ENCODER}"
+    --offset_path "${OUT_DIR}/offset.pth"
+    --offset_infer_scales "${LOSS_SCALES}"
+    --hybrid_prompt "${HYBRID_PROMPT}"
+    --hybrid_start_scale "${HYBRID_START_SCALE}"
+    --hybrid_cfg "${HYBRID_CFG}"
+    --num_samples "${NUM_SAMPLES}"
+    --save_file "${OUT_DIR}/hybrid_reconstruction.jpg"
+)
+if [[ "${HYBRID_ALL_SCALES}" == "1" ]]; then
+    INFER_ARGS+=(--hybrid_prompt_all_scales)
+fi
+
+"${PYTHON_BIN[@]}" tools/optimize_ada_offset.py "${INFER_ARGS[@]}" \
     2>&1 | tee "${OUT_DIR}/hybrid_infer.log"
 
 echo "Completed: ${OUT_DIR}"

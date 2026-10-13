@@ -145,15 +145,21 @@ def generate(
     seed,
     negative=None,
     hybrid_text_cond=None,
+    hybrid_blend_start_scale=None,
+    hybrid_blend_end_scale=None,
 ):
     infinity.eval()
     if hybrid_text_cond is None:
         cfg_list = [args.cfg] * len(scale_schedule)
         hybrid_start_scale = None
     else:
-        hybrid_start_scale = args.hybrid_start_scale
+        # In all-scales mode, the external text condition is active from
+        # scale 0. The learned offset is still restricted independently by
+        # --offset_infer_scales.
+        use_blend = hybrid_blend_start_scale is not None
+        hybrid_start_scale = None if use_blend else (0 if args.hybrid_prompt_all_scales else args.hybrid_start_scale)
         cfg_list = [
-            1.0 if si < hybrid_start_scale else args.hybrid_cfg
+            args.hybrid_cfg if use_blend or args.hybrid_prompt_all_scales or si >= hybrid_start_scale else 1.0
             for si in range(len(scale_schedule))
         ]
     tau_list = [args.tau] * len(scale_schedule)
@@ -165,6 +171,8 @@ def generate(
             vae_type=args.vae_type, ret_img=True, inference_mode=True, sampling_per_bits=args.sampling_per_bits,
             hybrid_label_B_or_BLT=hybrid_text_cond,
             hybrid_start_scale=hybrid_start_scale,
+            hybrid_blend_start_scale=hybrid_blend_start_scale,
+            hybrid_blend_end_scale=hybrid_blend_end_scale,
         )
     return img_list[0].cpu().numpy()  # H W 3, uint8, BGR
 
@@ -279,9 +287,20 @@ def infer(args, infinity, vae, device):
     _, scale_schedule, _ = get_scale_schedule(args, h_div_w)
     set_offset_infer_scales(infinity, args.offset_infer_scales, len(scale_schedule))
     hybrid_text_cond = None
+    hybrid_blend_start_scale = None
+    hybrid_blend_end_scale = None
     if args.hybrid_prompt:
-        if args.hybrid_start_scale < 0:
-            raise ValueError('--hybrid_start_scale is required when --hybrid_prompt is used')
+        if args.hybrid_prompt_all_scales and args.hybrid_prompt_blend:
+            raise ValueError('Use only one of --hybrid_prompt_all_scales or --hybrid_prompt_blend')
+        if args.hybrid_prompt_blend:
+            if args.hybrid_blend_end_scale < 0:
+                args.hybrid_blend_end_scale = len(scale_schedule) - 1
+            if not (0 <= args.hybrid_blend_start_scale <= args.hybrid_blend_end_scale < len(scale_schedule)):
+                raise ValueError('Invalid --hybrid_blend_start_scale/--hybrid_blend_end_scale')
+            hybrid_blend_start_scale = args.hybrid_blend_start_scale
+            hybrid_blend_end_scale = args.hybrid_blend_end_scale
+        elif not args.hybrid_prompt_all_scales and args.hybrid_start_scale < 0:
+            raise ValueError('--hybrid_start_scale is required unless --hybrid_prompt_all_scales is used')
         text_tokenizer, text_encoder = load_tokenizer(t5_path=args.text_encoder_ckpt)
         hybrid_text_cond = encode_prompt(text_tokenizer, text_encoder, args.hybrid_prompt)
         conds = [('<hybrid:null->%s>' % args.hybrid_prompt, get_null_text_cond(infinity, 1, null_len))]
@@ -302,6 +321,8 @@ def infer(args, infinity, vae, device):
                 args,
                 args.seed + i,
                 hybrid_text_cond=hybrid_text_cond,
+                hybrid_blend_start_scale=hybrid_blend_start_scale,
+                hybrid_blend_end_scale=hybrid_blend_end_scale,
             )
             for i in range(args.num_samples)
         ])
@@ -363,7 +384,11 @@ if __name__ == '__main__':
     parser.add_argument('--offset_scale', type=float, default=1.0, help='multiply the learned offset at inference')
     parser.add_argument('--prompt', type=str, default='', help="infer mode: prompt(s) separated by '|' the offset is added on top of (default: null text)")
     parser.add_argument('--hybrid_prompt', type=str, default='', help='infer mode: use null cfg_uncond for early scales, then this text condition for later scales')
+    parser.add_argument('--hybrid_prompt_all_scales', action='store_true', help='infer mode: use --hybrid_prompt from scale 0 through the final scale')
+    parser.add_argument('--hybrid_prompt_blend', action='store_true', help='infer mode: gradually blend prompt ca_kv from null to --hybrid_prompt')
     parser.add_argument('--hybrid_start_scale', type=int, default=-1, help='first scale using --hybrid_prompt; e.g. 4 after optimizing scales 0-3')
+    parser.add_argument('--hybrid_blend_start_scale', type=int, default=0, help='scale where prompt ca_kv blending starts')
+    parser.add_argument('--hybrid_blend_end_scale', type=int, default=-1, help='scale where prompt ca_kv blending reaches 100%%; default: final scale')
     parser.add_argument('--hybrid_cfg', type=float, default=3.0, help='CFG value used after --hybrid_start_scale')
     parser.add_argument('--num_samples', type=int, default=4, help='samples per prompt (seeds seed .. seed+n-1)')
     parser.add_argument('--save_file', type=str, default='./ada_offset_samples.jpg')
