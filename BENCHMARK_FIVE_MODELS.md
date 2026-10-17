@@ -44,6 +44,10 @@ step reports that `nvcc` or a CUDA toolkit is missing, choose a Vast.ai CUDA
 selected `CUDA_WHL` wheel, then rerun the setup script. Existing environments
 are reused; do not delete them.
 
+ARBooth also requires PyTorch 2.5+ because its released Infinity code imports
+`torch.nn.attention.flex_attention`. The setup script pins its isolated
+`benchmark-arbooth` environment to PyTorch 2.5.1.
+
 The downloader obtains the original Google DreamBooth dataset, Infinity/ARBooth dependencies, Switti, VQ-VAE, and CSD evaluator weights. It does not commit assets. SDXL and the two legacy checkpoints may require accepting Hugging Face licenses. Before downloading SDXL, export an approved token:
 
 ```bash

@@ -38,6 +38,13 @@ install_flash_attn() {
     local env="$1"
     # flash-attn's setup.py imports all three while generating package metadata.
     conda run --no-capture-output -n "${env}" python -m pip install ninja packaging psutil
+
+    # Reuse a healthy binary on reruns. If PyTorch was upgraded, importing the
+    # old extension generally fails and the forced reinstall below rebuilds it.
+    if conda run --no-capture-output -n "${env}" python -c 'import flash_attn'; then
+        return 0
+    fi
+
     if ! conda run --no-capture-output -n "${env}" python -m pip install --no-build-isolation flash-attn; then
         cat >&2 <<EOF
 Failed to build FlashAttention in ${env}.
@@ -59,7 +66,9 @@ pip_install benchmark-eval "timm==1.0.11" "transformers==4.45.2" "safetensors" "
 
 # Infinity/ARBooth. ARBooth imports FlashAttention unconditionally.
 create_env benchmark-arbooth 3.10
-pip_install benchmark-arbooth "torch==2.4.1" "torchvision==0.19.1" --index-url "https://download.pytorch.org/whl/${CUDA_WHL}"
+# infinity_final.py imports torch.nn.attention.flex_attention, introduced in
+# PyTorch 2.5. Keep this environment independent from the evaluator's 2.4 pin.
+pip_install benchmark-arbooth "torch==2.5.1" "torchvision==0.20.1" --index-url "https://download.pytorch.org/whl/${CUDA_WHL}"
 pip_install_requirements_without_flash_attn benchmark-arbooth models/ARBooth/requirements.txt
 install_flash_attn benchmark-arbooth
 
