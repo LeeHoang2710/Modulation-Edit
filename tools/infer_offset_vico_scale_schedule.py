@@ -16,6 +16,7 @@ import argparse
 import json
 import os.path as osp
 import sys
+import time
 from pathlib import Path
 
 sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
@@ -42,6 +43,11 @@ def main() -> None:
                         help="shared AdaLN modulation at scales after the alpha schedule; ca_kv remains prompt in both variants")
     parser.add_argument("--num-samples", type=int, default=8)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--output-seed-start", type=int, default=0,
+                        help="first normalized output seed index; lets independently trained offsets share one subject folder")
+    parser.add_argument("--max-prompts", type=int, default=0,
+                        help="0 means all 31 official templates; use 5 for a smoke test")
+    parser.add_argument("--timing-file", default="", help="optional JSON path for pure generation timing")
     parser.add_argument("--top-k", type=int, default=900)
     parser.add_argument("--top-p", type=float, default=0.97)
     parser.set_defaults(h_div_w_template=-1.)
@@ -88,7 +94,10 @@ def main() -> None:
     out_root = Path(args.out_dir) / args.subject
     out_root.mkdir(parents=True, exist_ok=True)
     prompt_cache = {}
-    for index, template in enumerate(item["prompt_templates"]):
+    templates = item["prompt_templates"][:args.max_prompts or None]
+    generation_seconds = 0.0
+    written = 0
+    for index, template in enumerate(templates):
         prompt = template.format(item["class_name"])
         if prompt not in prompt_cache:
             prompt_cache[prompt] = encode_prompt(tokenizer, encoder, prompt)
@@ -97,15 +106,27 @@ def main() -> None:
         prompt_dir.mkdir(parents=True, exist_ok=True)
         (prompt_dir / "prompt.txt").write_text(prompt + "\n")
         for sample in range(args.num_samples):
+            started = time.perf_counter()
             image = modspace_infer(infinity, vae, texts, offset, rows, scale_schedule,
                                    early_scales, early_scales, args.early_cfg, 1.0,
                                    args.seed + sample, args, scale_coefficients=coefficients,
                                    cfg_by_scale=cfg_by_scale,
                                    conditional_gss_source_by_scale=gss_sources)
-            path = prompt_dir / f"seed_{sample:03d}.png"
+            generation_seconds += time.perf_counter() - started
+            path = prompt_dir / f"seed_{args.output_seed_start + sample:03d}.png"
             if not cv2.imwrite(str(path), image):
                 raise OSError(f"Could not write {path}")
+            written += 1
         print(f"[saved] {prompt_dir} ({args.num_samples} samples)", flush=True)
+    if args.timing_file:
+        timing_path = Path(args.timing_file)
+        timing_path.parent.mkdir(parents=True, exist_ok=True)
+        timing_path.write_text(json.dumps({
+            "subject": args.subject, "late_gss": args.late_gss,
+            "images": written, "generation_seconds": generation_seconds,
+            "generation_seconds_per_image": generation_seconds / max(written, 1),
+            "prompts": len(templates),
+        }, indent=2) + "\n")
 
 
 if __name__ == "__main__":
