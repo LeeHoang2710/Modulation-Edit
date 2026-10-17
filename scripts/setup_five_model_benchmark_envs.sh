@@ -45,7 +45,7 @@ install_flash_attn() {
         return 0
     fi
 
-    if ! conda run --no-capture-output -n "${env}" python -m pip install --no-build-isolation flash-attn; then
+    if ! conda run --no-capture-output -n "${env}" python -m pip install --force-reinstall --no-build-isolation flash-attn; then
         cat >&2 <<EOF
 Failed to build FlashAttention in ${env}.
 ARBooth requires it. Use a Vast.ai CUDA *development* image with a CUDA toolkit
