@@ -9,7 +9,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-ENV_NAME="${ENV_NAME:-benchmark-arbooth}"
+ENV_NAME="${ENV_NAME:-vico-modulation}"
 EVAL_ENV_NAME="${EVAL_ENV_NAME:-benchmark-eval}"
 SUBJECTS="${SUBJECTS:-all}"
 OFFSET_SEEDS="${OFFSET_SEEDS:-1}"
@@ -48,9 +48,15 @@ if [[ "$VARIANTS" == *null* ]]; then
     [[ -n "$MODELS" ]] && MODELS+=","
     MODELS+="modulation_offset_late_null"
 fi
-"${EVAL_PY[@]}" benchmark/evaluate_vico.py \
-    --results "$RESULTS" --report-dir "$REPORT_DIR" --models "$MODELS"
-"${EVAL_PY[@]}" benchmark/print_vico_summary.py --summary "$REPORT_DIR/summary.csv"
+IFS=',' read -r -a MODEL_LIST <<< "$MODELS"
+for model in "${MODEL_LIST[@]}"; do
+    # Each late-scale formulation is a distinct method/model. Keep its metric
+    # CSVs independent so their aggregate scores cannot be mixed.
+    MODEL_REPORT_DIR="$REPORT_DIR/$model"
+    "${EVAL_PY[@]}" benchmark/evaluate_vico.py \
+        --results "$RESULTS" --report-dir "$MODEL_REPORT_DIR" --models "$model"
+    "${EVAL_PY[@]}" benchmark/print_vico_summary.py --summary "$MODEL_REPORT_DIR/summary.csv"
+done
 
 echo "[complete] Images: $RESULTS"
-echo "[complete] Metrics: $REPORT_DIR/summary.csv"
+echo "[complete] Separate metrics: $REPORT_DIR/modulation_offset_late_{prompt,null}/summary.csv"

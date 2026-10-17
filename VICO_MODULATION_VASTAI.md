@@ -1,7 +1,9 @@
 # Run the current Modulation-Edit method on ViCo (16 objects × 31 prompts)
 
-This is the active benchmark protocol. It uses ARBooth's official `inputs/`
-folders: 16 objects, each with reference images and 31 prompt templates.
+This is the active benchmark protocol for **our Modulation-Edit method only**.
+It uses the ViCo `inputs/` folders as data: 16 objects, each with reference
+images and 31 prompt templates. It does not install, train, run, or evaluate
+any of the five external baseline models.
 
 For each selected object and each requested offset seed, the workflow is:
 
@@ -59,7 +61,7 @@ export HF_TOKEN='your_huggingface_read_token'
 bash scripts/prepare_vico_assets.sh
 ```
 
-This initializes the ARBooth input submodule, downloads frozen Infinity
+This initializes the ViCo input submodule, downloads frozen Infinity
 weights and Flan-T5 locally under `weights/infinity/`, then writes
 `benchmark/manifests/vico.json`.
 
@@ -81,10 +83,19 @@ Expected outputs:
 benchmark_work/vico_modulation/offsets/brown_dog/train_seed000/offset.pth
 benchmark_outputs_vico_smoke/modulation_offset_late_prompt/brown_dog/prompt_00/seed_000.png
 benchmark_outputs_vico_smoke/modulation_offset_late_null/brown_dog/prompt_00/seed_000.png
-benchmark_reports_vico_smoke/summary.csv
+benchmark_reports_vico_smoke/modulation_offset_late_prompt/summary.csv
+benchmark_reports_vico_smoke/modulation_offset_late_null/summary.csv
 ```
 
-The terminal table and `benchmark_reports_vico/summary.csv` report:
+Each late-scale variant is evaluated as a separate model and receives its own
+report directory:
+
+```text
+benchmark_reports_vico_smoke/modulation_offset_late_prompt/summary.csv
+benchmark_reports_vico_smoke/modulation_offset_late_null/summary.csv
+```
+
+The terminal table and each variant's `summary.csv` report:
 
 | Column | Meaning |
 | --- | --- |
@@ -119,7 +130,7 @@ To re-fit existing offsets rather than reuse the saved files, pass an extra
 argument directly to the Python runner:
 
 ```bash
-conda run --no-capture-output -n benchmark-arbooth python \
+conda run --no-capture-output -n vico-modulation python \
   benchmark/run_ours_vico_two_variant.py --subjects brown_dog \
   --offset-seeds 1 --max-prompts 5 --force-optimize
 ```
