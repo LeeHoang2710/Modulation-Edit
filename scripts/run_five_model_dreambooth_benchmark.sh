@@ -10,6 +10,9 @@ SUBJECTS="${SUBJECTS:-all}"              # smoke test: SUBJECTS=dog
 MODELS="${MODELS:-arbooth,csd_var,dreambooth,textual_inversion,unziplora}"
 IMAGES_PER_PROMPT="${IMAGES_PER_PROMPT:-4}"
 SEED="${SEED:-0}"
+ARBOOTH_STEPS="${ARBOOTH_STEPS:-500}"
+DREAMBOOTH_STEPS="${DREAMBOOTH_STEPS:-800}"
+PRIOR_IMAGES="${PRIOR_IMAGES:-100}"
 RESULTS="${RESULTS:-benchmark_outputs}"
 REPORTS="${REPORTS:-benchmark_reports}"
 MANIFEST="${MANIFEST:-benchmark/manifests/dreambooth.json}"
@@ -33,7 +36,8 @@ for model in "${requested[@]}"; do
     echo "========== [$model] subjects=$SUBJECTS =========="
     conda run --no-capture-output -n "$environment" python benchmark/run_baseline.py \
         --model "$model" --manifest "$MANIFEST" --output "$RESULTS" --subjects "$SUBJECTS" \
-        --images-per-prompt "$IMAGES_PER_PROMPT" --seed "$SEED"
+        --images-per-prompt "$IMAGES_PER_PROMPT" --seed "$SEED" \
+        --arbooth-steps "$ARBOOTH_STEPS" --dreambooth-steps "$DREAMBOOTH_STEPS" --prior-images "$PRIOR_IMAGES"
 done
 
 conda run --no-capture-output -n benchmark-eval python benchmark/evaluate_dreambooth.py \

@@ -44,6 +44,39 @@ def copy_images(source: Path, destination: Path, count: int) -> int:
     return len(candidates[:count])
 
 
+def image_count(directory: Path) -> int:
+    return sum(1 for path in directory.glob("*") if path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"})
+
+
+def ensure_dreambooth_priors(model: Path, cls: str, args, env: dict[str, str]) -> Path:
+    """Create class-prior images required by the original DreamBooth code."""
+    prior_dir = args.regularization_root / clean_prompt(cls)
+    existing = image_count(prior_dir) if prior_dir.is_dir() else 0
+    if existing >= args.prior_images:
+        return prior_dir
+    if not args.sd14_ckpt.is_file():
+        raise RuntimeError(
+            f"DreamBooth requires {args.sd14_ckpt} to generate class-prior images; "
+            "download/point --sd14-ckpt at an accepted Stable Diffusion v1.4 checkpoint."
+        )
+    raw = prior_dir / "_raw"
+    missing = args.prior_images - existing
+    # The upstream sampler writes to outdir/samples. Copy its individual images
+    # into the flat directory expected by DreamBooth's PersonalizedBase dataset.
+    shell(["python", "scripts/stable_txt2img.py", "--skip_grid", "--n_samples", str(min(4, missing)),
+           "--n_iter", str((missing + 3) // 4), "--seed", str(args.seed), "--ddim_steps", "50",
+           "--scale", "7.5", "--ckpt", str(args.sd14_ckpt), "--outdir", str(raw),
+           "--prompt", f"a photo of a {cls}"], model, env)
+    produced = sorted((raw / "samples").glob("*"))
+    prior_dir.mkdir(parents=True, exist_ok=True)
+    for index, path in enumerate(produced[:missing], start=existing):
+        if path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}:
+            shutil.copy2(path, prior_dir / f"prior_{index:04d}{path.suffix.lower()}")
+    if image_count(prior_dir) < args.prior_images:
+        raise RuntimeError(f"DreamBooth prior generation produced too few images in {prior_dir}")
+    return prior_dir
+
+
 def write_timing(subject_dir: Path, prep: float, infer: float, image_count: int, protocol: str) -> None:
     subject_dir.mkdir(parents=True, exist_ok=True)
     (subject_dir / "timing.json").write_text(json.dumps({
@@ -57,11 +90,17 @@ def write_timing(subject_dir: Path, prep: float, infer: float, image_count: int,
 def run_arbooth(root: Path, item: dict, output: Path, args, env: dict[str, str]) -> None:
     model = root / "models" / "ARBooth"
     subject, cls = item["subject"], item["class_name"]
-    work = Path(args.work_dir) / "arbooth" / subject
+    work = args.work_dir / "arbooth" / subject
+    if not args.infinity_model.is_file() or not args.infinity_vae.is_file():
+        raise RuntimeError("ARBooth requires the Infinity-2B and VAE checkpoints; run the download script first.")
+    if not args.flan_t5.is_dir():
+        raise RuntimeError(f"ARBooth requires local FLAN-T5-XL at {args.flan_t5}")
     train_start = time.monotonic()
     shell(["python", "booth_train_final.py", "--instance_prompt", f"<placeholder> {cls}", "--class_prompt", cls,
            "--data_path", str(Path(item["reference_images"][0]).parent), "--local_out_path", str(work),
-           "--exp_name", subject, "--val_prompt_path", str(args.validation_prompts)], model, env)
+           "--exp_name", subject, "--val_prompt_path", str(args.validation_prompts),
+           "--model_path", str(args.infinity_model), "--vae_path", str(args.infinity_vae),
+           "--text_encoder_ckpt", str(args.flan_t5), "--train_iter", str(args.arbooth_steps)], model, env)
     prep = time.monotonic() - train_start
     checkpoints = sorted(work.glob("txt_emb*.pth"))
     if not checkpoints:
@@ -87,7 +126,7 @@ def run_csd_var(root: Path, item: dict, output: Path, args, env: dict[str, str])
     subject, cls = item["subject"], item["class_name"]
     # CSD-VAR Switti is a single-reference method.  It sees the manifest's
     # deterministic first reference; the protocol is surfaced in every report.
-    work = Path(args.work_dir) / "csd_var" / subject
+    work = args.work_dir / "csd_var" / subject
     data_dir = work / f"{cls}+photo"; data_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(item["single_reference"], data_dir / Path(item["single_reference"]).name)
     prompts_path = work / "prompts.json"; prompts_path.parent.mkdir(parents=True, exist_ok=True)
@@ -135,7 +174,7 @@ def run_csd_var(root: Path, item: dict, output: Path, args, env: dict[str, str])
 def run_unziplora(root: Path, item: dict, output: Path, args, env: dict[str, str]) -> None:
     model = root / "models" / "UnZipLoRA"
     subject, cls = item["subject"], item["class_name"]
-    work = Path(args.work_dir) / "unziplora" / subject; checkpoint = work / "model"
+    work = args.work_dir / "unziplora" / subject; checkpoint = work / "model"
     prep_start = time.monotonic()
     shell(["accelerate", "launch", "train_unziplora.py", "--pretrained_model_name_or_path", str(args.sdxl),
            "--instance_data_dir", str(Path(item["reference_images"][0]).parent), "--output_dir", str(checkpoint),
@@ -165,12 +204,13 @@ def legacy_runner(root: Path, item: dict, output: Path, args, env: dict[str, str
     """
     model = root / "models" / ("DreamBooth" if name == "dreambooth" else "Textual-Inversion")
     subject, cls = item["subject"], item["class_name"]
-    work = Path(args.work_dir) / name / subject; work.mkdir(parents=True, exist_ok=True)
+    work = args.work_dir / name / subject; work.mkdir(parents=True, exist_ok=True)
     prep_start = time.monotonic()
     if name == "dreambooth":
+        prior_dir = ensure_dreambooth_priors(model, cls, args, env)
         shell(["python", "main.py", "--base", "configs/stable-diffusion/v1-finetune_unfrozen.yaml", "-t", "--gpus", "0,",
                "--actual_resume", str(args.sd14_ckpt), "-n", subject, "--data_root", str(Path(item["reference_images"][0]).parent),
-               "--reg_data_root", str(args.regularization_root / cls), "--class_word", cls], model, env)
+               "--reg_data_root", str(prior_dir), "--class_word", cls, "--max_steps", str(args.dreambooth_steps)], model, env)
         checkpoints = sorted((model / "logs" / subject / "checkpoints").glob("*.ckpt"))
     else:
         shell(["python", "main.py", "--base", "configs/latent-diffusion/txt2img-1p4B-finetune.yaml", "-t", "--gpus", "0,",
@@ -184,12 +224,14 @@ def legacy_runner(root: Path, item: dict, output: Path, args, env: dict[str, str
     for prompt in item["prompts"]:
         raw = work / "raw" / clean_prompt(prompt)
         if name == "dreambooth":
+            personalized_prompt = prompt.replace(cls, f"sks {cls}")
             command = ["python", "scripts/stable_txt2img.py", "--skip_grid", "--n_samples", str(args.images_per_prompt), "--n_iter", "1",
-                       "--seed", str(args.seed), "--ckpt", str(checkpoints[-1]), "--outdir", str(raw), "--prompt", f"photo of a sks {prompt}"]
+                       "--seed", str(args.seed), "--ckpt", str(checkpoints[-1]), "--outdir", str(raw), "--prompt", personalized_prompt]
         else:
+            personalized_prompt = prompt.replace(cls, f"* {cls}")
             command = ["python", "scripts/txt2img.py", "--skip_grid", "--n_samples", str(args.images_per_prompt), "--n_iter", "1",
                        "--seed", str(args.seed), "--ckpt_path", str(args.ldm_ckpt), "--embedding_path", str(checkpoints[-1]),
-                       "--outdir", str(raw), "--prompt", f"a photo of * {prompt}"]
+                       "--outdir", str(raw), "--prompt", personalized_prompt]
         shell(command, model, env)
         target = subject_out / clean_prompt(prompt); target.mkdir(parents=True, exist_ok=True); (target / "prompt.txt").write_text(prompt + "\n")
         written += copy_images(raw, target, args.images_per_prompt)
@@ -206,6 +248,7 @@ def main() -> None:
     parser.add_argument("--images-per-prompt", type=int, default=4)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--pn", default="1M")
+    parser.add_argument("--infinity-model", default="weights/infinity/infinity_2b_reg.pth")
     parser.add_argument("--infinity-vae", default="weights/infinity/infinity_vae_d32reg.pth")
     parser.add_argument("--flan-t5", default="weights/infinity/flan-t5-xl")
     parser.add_argument("--validation-prompts", default="benchmark/prompts_validate.list")
@@ -215,11 +258,19 @@ def main() -> None:
     parser.add_argument("--csd-step", type=int, default=150)
     parser.add_argument("--sdxl", default="weights/sdxl-base-1.0")
     parser.add_argument("--unzip-steps", type=int, default=600)
+    parser.add_argument("--arbooth-steps", type=int, default=500)
+    parser.add_argument("--dreambooth-steps", type=int, default=800)
+    parser.add_argument("--prior-images", type=int, default=100)
     parser.add_argument("--sd14-ckpt", default="weights/stable-diffusion/sd-v1-4-full-ema.ckpt")
     parser.add_argument("--ldm-ckpt", default="weights/latent-diffusion/model.ckpt")
     parser.add_argument("--regularization-root", type=Path, default=Path("data/regularization"))
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
+    # All paths must stay valid when subprocesses change cwd into an upstream
+    # model directory. Resolve once at the benchmark boundary.
+    for name in ("work_dir", "infinity_model", "infinity_vae", "flan_t5", "validation_prompts", "switti", "switti_vae", "sdxl", "sd14_ckpt", "ldm_ckpt", "regularization_root"):
+        value = Path(getattr(args, name))
+        setattr(args, name, value if value.is_absolute() else (root / value).resolve())
     subjects = load_manifest(root / args.manifest)
     selected = subjects if args.subjects == "all" else [x for x in subjects if x["subject"] in set(args.subjects.split(","))]
     if not selected:
