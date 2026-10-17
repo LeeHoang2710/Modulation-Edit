@@ -79,7 +79,7 @@ def encode_texts(infinity, null_len, prompt_cond):
 
 @torch.no_grad()
 def modspace_infer(infinity, vae, texts, offset, rows, scale_schedule, offset_scales, delta_scales, cfg, tau, seed, args,
-                   scale_coefficients=None):
+                   scale_coefficients=None, cfg_by_scale=None, conditional_gss_source_by_scale=None):
     """
     rows: [cond] or [cond, uncond], each (cond_src, ca_src, use_offset, delta_w):
         sos / head adaLN / gss base from texts[cond_src], cross-attention on texts[ca_src],
@@ -87,6 +87,11 @@ def modspace_infer(infinity, vae, texts, offset, rows, scale_schedule, offset_sc
     offset: (S, 1, 6, C), or (1, 1, 6, C) in shared mode; returns one HW3 uint8 BGR image
     scale_coefficients: optional {scale_index: (conditional_offset_weight, conditional_delta_weight)}.
         Only row 0 is overridden; row 1 (the CFG null partner) retains its weights from rows.
+    cfg_by_scale: optional CFG strength for every scale. This enables, for
+        example, a mild early CFG and stronger late prompt CFG.
+    conditional_gss_source_by_scale: optional {scale_index: NULL|PROMPT|NULL_P}
+        source for only the conditional row's shared AdaLN modulation. The CFG
+        partner retains its original source, normally NULL.
     """
     sos_all, gss_all, ca_all = texts
     n = len(rows)
@@ -101,9 +106,15 @@ def modspace_infer(infinity, vae, texts, offset, rows, scale_schedule, offset_sc
     use_offset = torch.tensor([float(r[2]) for r in rows], device=gss_base.device).view(n, 1, 1, 1)
     delta_w = torch.tensor([float(r[3]) for r in rows], device=gss_base.device).view(n, 1, 1, 1)
     scale_coefficients = scale_coefficients or {}
+    conditional_gss_source_by_scale = conditional_gss_source_by_scale or {}
     if any(si < 0 or si >= len(scale_schedule) or len(weights) != 2
            for si, weights in scale_coefficients.items()):
         raise ValueError("scale_coefficients must map valid scale indices to (offset_weight, delta_weight)")
+    if cfg_by_scale is not None and len(cfg_by_scale) != len(scale_schedule):
+        raise ValueError("cfg_by_scale must have one value per generation scale")
+    if any(si < 0 or si >= len(scale_schedule) or source not in (NULL, PROMPT, NULL_P)
+           for si, source in conditional_gss_source_by_scale.items()):
+        raise ValueError("conditional_gss_source_by_scale must map valid scales to NULL, PROMPT, or NULL_P")
     per_scale_weights = {}
     for si, (offset_weight, delta_weight) in scale_coefficients.items():
         per_scale_weights[si] = (
@@ -122,7 +133,13 @@ def modspace_infer(infinity, vae, texts, offset, rows, scale_schedule, offset_sc
         summed_codes = 0
         for si, pn in enumerate(scale_schedule):
             use_offset_si, delta_w_si = per_scale_weights.get(si, (use_offset, delta_w))
-            gss_si = gss_base
+            gss_source = conditional_gss_source_by_scale.get(si)
+            if gss_source is None:
+                gss_si = gss_base
+            else:
+                # The first row is conditional. Preserve each CFG partner's
+                # original null source so guidance remains a prompt direction.
+                gss_si = gss_all[[gss_source, *cond_src[1:]]]
             if si in offset_scales and (offset.shape[0] == 1 or si < offset.shape[0]):
                 gss_si = gss_si + use_offset_si * offset[0 if offset.shape[0] == 1 else si]
             if si in delta_scales:
@@ -134,8 +151,9 @@ def modspace_infer(infinity, vae, texts, offset, rows, scale_schedule, offset_sc
                     last_stage = m(x=last_stage, cond_BD=gss_si, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=None,
                                    scale_schedule=scale_schedule, rope2d_freqs_grid=infinity.rope2d_freqs_grid, scale_ind=si)
 
+            cfg_si = cfg_by_scale[si] if cfg_by_scale is not None else cfg
             logits = infinity.get_logits(last_stage, cond_BD)
-            logits_BlV = (cfg * logits[:1] + (1 - cfg) * logits[1:] if n == 2 else logits).mul(1 / tau)
+            logits_BlV = (cfg_si * logits[:1] + (1 - cfg_si) * logits[1:] if n == 2 else logits).mul(1 / tau)
             idx_Bld = sample_with_top_k_top_p_also_inplace_modifying_logits_(
                 logits_BlV.reshape(1, -1, 2), rng=rng, top_k=args.top_k, top_p=args.top_p, num_samples=1)[:, :, 0]
             idx_Bld = idx_Bld.reshape(1, pn[1], pn[2], -1).unsqueeze(1)  # 1, 1, h, w, d

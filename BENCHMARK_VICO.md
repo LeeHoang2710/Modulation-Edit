@@ -33,11 +33,22 @@ bash scripts/run_ours_vico_benchmark.sh
 ```
 
 The runner fits one null-text per-scale AdaLN offset from **all** ViCo
-references of each subject, then generates the 31 prompts with the selected
-combined modulation/cross-attention configuration. It saves normalized images
+references of each subject. Its default inference is the current method:
+
+\[
+G_s=(1-\alpha_s)(G_{null}+D_s)+\alpha_sG_{prompt},\quad
+\alpha_{0:4}=[.25,.20,.15,.10,.05],\quad cfg=1.2
+\]
+
+for scales 0--4; scales 5--12 use \(G_{prompt}\) with `cfg=2.0`. Prompt
+cross-attention (`ca_kv`) is used at all scales. It saves normalized images
 under `benchmark_outputs_vico/modulation_offset/` and supplementary DINO,
 CLIP-I, CLIP-T, preparation-time, and inference-time CSVs under
 `benchmark_reports_vico/`.
+
+The default optimizer supervises and learns offsets only on scales `0-4`;
+override `LOSS_SCALES` and `OFFSET_INFER_SCALES` together only for an explicit
+ablation.
 
 For an exact ARBooth paper-table comparison, also use upstream ARBooth's
 official evaluator on its required `concept/prompt_XX/` output layout; it adds
