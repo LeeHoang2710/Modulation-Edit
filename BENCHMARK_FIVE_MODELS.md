@@ -32,6 +32,13 @@ bash scripts/download_five_model_benchmark_assets.sh
 
 `setup_five_model_benchmark_envs.sh` creates five isolated Conda environments because the original 2022 LDM code cannot safely share dependencies with modern Switti/SDXL code.
 
+ARBooth requires FlashAttention. The setup script installs PyTorch first and
+then builds FlashAttention with PyTorch visible to the build process. If this
+step reports that `nvcc` or a CUDA toolkit is missing, choose a Vast.ai CUDA
+**development** image (not a runtime-only image) whose CUDA toolkit matches the
+selected `CUDA_WHL` wheel, then rerun the setup script. Existing environments
+are reused; do not delete them.
+
 The downloader obtains the original Google DreamBooth dataset, Infinity/ARBooth dependencies, Switti, VQ-VAE, and CSD evaluator weights. It does not commit assets. SDXL and the two legacy checkpoints may require accepting Hugging Face licenses. Before downloading SDXL, export an approved token:
 
 ```bash

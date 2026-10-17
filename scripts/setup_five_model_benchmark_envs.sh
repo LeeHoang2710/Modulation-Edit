@@ -22,6 +22,32 @@ pip_install() {
     conda run --no-capture-output -n "${env}" python -m pip install "$@"
 }
 
+# flash-attn imports torch from setup.py. Pip's default isolated build
+# environment deliberately hides the torch already installed in the Conda env,
+# which produces: "ModuleNotFoundError: No module named 'torch'". Install all
+# other requirements normally, then build flash-attn against that env's torch.
+pip_install_requirements_without_flash_attn() {
+    local env="$1" requirements="$2" filtered
+    filtered="$(mktemp)"
+    sed -E '/^[[:space:]]*flash[_-]attn([[:space:]]|$)/d' "${requirements}" > "${filtered}"
+    conda run --no-capture-output -n "${env}" python -m pip install -r "${filtered}"
+    rm -f "${filtered}"
+}
+
+install_flash_attn() {
+    local env="$1"
+    conda run --no-capture-output -n "${env}" python -m pip install ninja packaging
+    if ! conda run --no-capture-output -n "${env}" python -m pip install --no-build-isolation flash-attn; then
+        cat >&2 <<EOF
+Failed to build FlashAttention in ${env}.
+ARBooth requires it. Use a Vast.ai CUDA *development* image with a CUDA toolkit
+(nvcc) compatible with the installed PyTorch/CUDA wheel, then rerun this script.
+The other existing benchmark environments do not need to be recreated.
+EOF
+        return 1
+    fi
+}
+
 cd "$ROOT"
 git submodule update --init --recursive
 
@@ -30,10 +56,11 @@ create_env benchmark-eval 3.10
 pip_install benchmark-eval "torch==2.4.1" "torchvision==0.19.1" --index-url "https://download.pytorch.org/whl/${CUDA_WHL}"
 pip_install benchmark-eval "timm==1.0.11" "transformers==4.45.2" "safetensors" "pillow" "numpy"
 
-# Infinity/ARBooth. flash-attn is optional: omit it if your GPU/CUDA cannot build it.
+# Infinity/ARBooth. ARBooth imports FlashAttention unconditionally.
 create_env benchmark-arbooth 3.10
 pip_install benchmark-arbooth "torch==2.4.1" "torchvision==0.19.1" --index-url "https://download.pytorch.org/whl/${CUDA_WHL}"
-pip_install benchmark-arbooth -r models/ARBooth/requirements.txt
+pip_install_requirements_without_flash_attn benchmark-arbooth models/ARBooth/requirements.txt
+install_flash_attn benchmark-arbooth
 
 # CSD-VAR official Switti implementation.
 create_env benchmark-csdvar 3.10
