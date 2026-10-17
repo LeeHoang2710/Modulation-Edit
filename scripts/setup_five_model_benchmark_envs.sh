@@ -36,7 +36,8 @@ pip_install_requirements_without_flash_attn() {
 
 install_flash_attn() {
     local env="$1"
-    conda run --no-capture-output -n "${env}" python -m pip install ninja packaging
+    # flash-attn's setup.py imports all three while generating package metadata.
+    conda run --no-capture-output -n "${env}" python -m pip install ninja packaging psutil
     if ! conda run --no-capture-output -n "${env}" python -m pip install --no-build-isolation flash-attn; then
         cat >&2 <<EOF
 Failed to build FlashAttention in ${env}.
