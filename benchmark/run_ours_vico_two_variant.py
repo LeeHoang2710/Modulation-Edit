@@ -155,7 +155,7 @@ def generate_variant(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", default="benchmark/manifests/vico.json")
-    parser.add_argument("--subjects", default="all", help="all or comma-separated ARBooth/ViCo subject names")
+    parser.add_argument("--subjects", default="all", help="all or comma-separated ViCo subject names")
     parser.add_argument("--offset-seeds", type=int, default=1, help="number of independently fitted offsets per subject")
     parser.add_argument("--inference-seed-base", type=int, default=0)
     parser.add_argument("--variants", default="prompt,null", help="comma-separated late modulation variants: prompt,null")

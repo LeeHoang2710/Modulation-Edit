@@ -1,7 +1,7 @@
 # Run the current Modulation-Edit method on ViCo (16 objects × 31 prompts)
 
 This is the active benchmark protocol for **our Modulation-Edit method only**.
-It uses the ViCo `inputs/` folders as data: 16 objects, each with reference
+It uses the ViCo data folders as input: 16 objects, each with reference
 images and 31 prompt templates. It does not install, train, run, or evaluate
 any of the five external baseline models.
 
@@ -23,21 +23,18 @@ objects. Each saved offset produces one image per prompt, so each method has
 ## 1. Create a Vast.ai instance and clone the branch
 
 Use a **CUDA development** image, not a runtime-only image. `nvcc --version`
-must work because ARBooth needs FlashAttention. A GPU with at least 24 GB VRAM
-is recommended.
+must work because this Infinity implementation builds FlashAttention. A GPU
+with at least 24 GB VRAM is recommended.
 
 ```bash
 cd /workspace
-git clone --branch five-model-dreambooth-benchmark --recurse-submodules \
+git clone --branch five-model-dreambooth-benchmark \
   https://github.com/LeeHoang2710/Modulation-Edit.git
 cd Modulation-Edit
 ```
 
-If the repository was cloned without submodules:
-
-```bash
-git submodule update --init --recursive
-```
+The active setup does not initialize any model submodules. The benchmark data
+is fetched separately in step 3, and only its `inputs/` directory is retained.
 
 ## 2. Install the two required environments
 
@@ -61,8 +58,8 @@ export HF_TOKEN='your_huggingface_read_token'
 bash scripts/prepare_vico_assets.sh
 ```
 
-This initializes the ViCo input submodule, downloads frozen Infinity
-weights and Flan-T5 locally under `weights/infinity/`, then writes
+This downloads only the ViCo input data (under `data/vico/`), frozen Infinity
+weights, and Flan-T5 locally under `weights/infinity/`, then writes
 `benchmark/manifests/vico.json`.
 
 ## 4. Smoke test: one subject and five prompts

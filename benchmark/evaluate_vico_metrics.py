@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified DreamBooth metrics for all five baselines.
+"""ViCo metrics for the current Modulation-Edit method.
 
 Expected generated-image layout:
   <results>/<model>/<subject>/<prompt-slug>/prompt.txt
@@ -73,9 +73,9 @@ def generated_paths(prompt_dir: Path) -> list[Path]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--results", default="benchmark_outputs")
-    parser.add_argument("--dataset", default="data/dreambooth/dataset")
-    parser.add_argument("--report-dir", default="benchmark_reports")
+    parser.add_argument("--results", default="benchmark_outputs_vico")
+    parser.add_argument("--dataset", default="data/vico")
+    parser.add_argument("--report-dir", default="benchmark_reports_vico")
     parser.add_argument("--models", default="all", help="all or comma-separated output model directory names")
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--clip-model", default="openai/clip-vit-base-patch32")

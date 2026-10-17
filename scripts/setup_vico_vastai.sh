@@ -35,7 +35,7 @@ install_modulation_requirements() {
     # not expose torch, so install the other requirements first.
     local filtered
     filtered="$(mktemp)"
-    sed -E '/^[[:space:]]*flash[_-]attn([[:space:]]|$)/d' models/ARBooth/requirements.txt > "$filtered"
+    sed -E '/^[[:space:]]*flash[_-]attn([[:space:]]|$)/d' requirements.txt > "$filtered"
     conda run --no-capture-output -n vico-modulation python -m pip install -r "$filtered"
     command rm -f "$filtered"
     conda run --no-capture-output -n vico-modulation python -m pip install ninja packaging psutil
@@ -43,8 +43,6 @@ install_modulation_requirements() {
         conda run --no-capture-output -n vico-modulation python -m pip install --no-build-isolation flash-attn
     fi
 }
-
-git submodule update --init --recursive
 
 # Training/inference environment for our modulation method. PyTorch >=2.5 is
 # required by the bundled Infinity FlexAttention implementation.

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Build the exact 16-concept ARBooth/ViCo evaluation manifest.
+"""Build the exact 16-concept ViCo manifest used by Modulation-Edit.
 
-The source of truth is the checked-out ARBooth ``inputs/`` directory. Unlike
-the historical Google DreamBooth benchmark, ViCo has five live and eleven
-non-live concepts and 31 templates per concept. Templates intentionally remain
-unrendered: every method applies its own subject-token convention.
+The downloaded ViCo data lives in ``data/vico``. It contains five live and
+eleven non-live concepts with 31 templates each. Templates remain unrendered:
+our prompt-conditioned modulation code inserts the generic class noun.
 """
 from __future__ import annotations
 
@@ -40,13 +39,13 @@ def prompt_templates(path: Path) -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--inputs", default="models/ARBooth/inputs")
+    parser.add_argument("--inputs", default="data/vico")
     parser.add_argument("--output", default="benchmark/manifests/vico.json")
     args = parser.parse_args()
     root = Path.cwd()
     inputs = Path(args.inputs).resolve()
     if not inputs.is_dir():
-        raise SystemExit(f"ARBooth ViCo inputs are missing: {inputs}")
+        raise SystemExit(f"ViCo inputs are missing: {inputs}. Run scripts/prepare_vico_assets.sh first.")
     live_prompts = prompt_templates(inputs / "prompts_live_objects.txt")
     nonlive_prompts = prompt_templates(inputs / "prompts_nonlive_objects.txt")
     subjects = []
@@ -67,7 +66,7 @@ def main() -> None:
             "prompt_file": str(prompt_file.relative_to(root)),
             "prompt_templates": live_prompts if is_live else nonlive_prompts,
         })
-    payload = {"benchmark": "ARBooth / ViCo personalization benchmark", "prompt_count_per_subject": 31,
+    payload = {"benchmark": "ViCo personalization benchmark", "prompt_count_per_subject": 31,
                "paper_samples_per_prompt": 8, "subjects": subjects}
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
