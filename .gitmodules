@@ -1,0 +1,15 @@
+[submodule "models/ARBooth"]
+	path = models/ARBooth
+	url = https://github.com/jiwoogit/ARBooth.git
+[submodule "models/CSD-VAR"]
+	path = models/CSD-VAR
+	url = https://github.com/visual-ar-group/CSD-VAR.git
+[submodule "models/DreamBooth"]
+	path = models/DreamBooth
+	url = https://github.com/XavierXiao/Dreambooth-Stable-Diffusion.git
+[submodule "models/Textual-Inversion"]
+	path = models/Textual-Inversion
+	url = https://github.com/rinongal/textual_inversion.git
+[submodule "models/UnZipLoRA"]
+	path = models/UnZipLoRA
+	url = https://github.com/changLiu77/UnZipLoRA.git

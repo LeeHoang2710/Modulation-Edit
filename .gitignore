@@ -32,6 +32,11 @@ wandb
 *.tar.gz
 *.bin
 data/
+benchmark_outputs/
+benchmark_reports/
+benchmark_work/
+benchmark/manifests/*.json
+benchmark/manifests/*.csv
 tmp
 output
 *.tsv
