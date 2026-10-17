@@ -32,6 +32,11 @@ bash scripts/download_five_model_benchmark_assets.sh
 
 `setup_five_model_benchmark_envs.sh` creates five isolated Conda environments because the original 2022 LDM code cannot safely share dependencies with modern Switti/SDXL code.
 
+The legacy DreamBooth/Textual-Inversion environment intentionally uses
+`pip<24.1`: its pinned `pytorch-lightning==1.5.9` has metadata that newer pip
+versions reject. This is isolated to `benchmark-ldm` and does not downgrade the
+other four environments.
+
 ARBooth requires FlashAttention. The setup script installs PyTorch first and
 then builds FlashAttention with PyTorch visible to the build process. If this
 step reports that `nvcc` or a CUDA toolkit is missing, choose a Vast.ai CUDA

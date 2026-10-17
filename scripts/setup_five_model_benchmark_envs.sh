@@ -72,8 +72,19 @@ pip_install benchmark-csdvar -r models/CSD-VAR/requirements.txt
 # implementations and must remain on their legacy Python/PyTorch stack.
 create_env benchmark-ldm 3.8
 pip_install benchmark-ldm "torch==1.10.2+cu113" "torchvision==0.11.3+cu113" --extra-index-url https://download.pytorch.org/whl/cu113
-pip_install benchmark-ldm "pytorch-lightning==1.5.9" "omegaconf==2.1.1" "transformers==4.18.0" "einops==0.4.1" "kornia==0.6" "albumentations==1.1.0" "opencv-python-headless==4.2.0.34" "imageio==2.14.1" "imageio-ffmpeg==0.4.7" "test-tube" "streamlit" "torchmetrics==0.6.0" "pillow==9.0.1"
-pip_install benchmark-ldm "git+https://github.com/CompVis/taming-transformers.git@master#egg=taming-transformers" "git+https://github.com/openai/CLIP.git@main#egg=clip"
+# pytorch-lightning 1.5.9 declares its torch requirement as ">=1.7.*". That
+# metadata is valid to the 2022 resolver but pip >=24.1 deliberately rejects
+# it, so keep pip old only inside the isolated legacy LDM environment.
+conda run --no-capture-output -n benchmark-ldm python -m pip install --upgrade "pip<24.1"
+conda run --no-capture-output -n benchmark-ldm python -m pip install \
+    "pytorch-lightning==1.5.9" "omegaconf==2.1.1" "transformers==4.18.0" \
+    "einops==0.4.1" "kornia==0.6" "albumentations==1.1.0" \
+    "opencv-python-headless==4.2.0.34" "imageio==2.14.1" \
+    "imageio-ffmpeg==0.4.7" "test-tube" "streamlit" \
+    "torchmetrics==0.6.0" "pillow==9.0.1"
+conda run --no-capture-output -n benchmark-ldm python -m pip install \
+    "git+https://github.com/CompVis/taming-transformers.git@master#egg=taming-transformers" \
+    "git+https://github.com/openai/CLIP.git@main#egg=clip"
 
 # UnZipLoRA's authors specify Python 3.11 and PyTorch 2.3.
 create_env benchmark-unziplora 3.11
