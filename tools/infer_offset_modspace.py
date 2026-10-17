@@ -24,6 +24,7 @@ import os.path as osp
 import sys
 import time
 import argparse
+import json
 
 sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
 
@@ -194,10 +195,19 @@ def build_variants(args, prompt, offset_desc, delta_scales, delta_weights, cfgs,
     return variants
 
 
-def prompt_templates(spec, subject):
-    """--prompts: 'dreambooth' (the official 25 prompts: live list for dogs / cats, object list otherwise) or '|'-separated"""
+def prompt_templates(spec, subject, manifest_item=None):
+    """Resolve templates without baking one benchmark protocol into this tool.
+
+    ``dreambooth`` retains the historical 25-prompt protocol. ``manifest``
+    reads subject templates from ``--manifest``; this supports ARBooth/ViCo's
+    31 templates. Any other value is a ``|``-separated ad-hoc list.
+    """
     if spec == 'dreambooth':
         return DREAMBOOTH_LIVE if subject in LIVE_SUBJECTS else DREAMBOOTH_OBJECT
+    if spec == 'manifest':
+        if manifest_item is None:
+            raise ValueError("--prompts manifest requires --manifest with this subject")
+        return manifest_item['prompt_templates']
     return spec.split('|')
 
 
@@ -209,6 +219,7 @@ if __name__ == '__main__':
     parser.add_argument('--iter', type=int, default=100, help='which snapshot: <run_dir>/<subject>/itXXXXX/offset.pth')
     parser.add_argument('--subjects', type=str, default='', help='comma-separated; default: every subject in run_dir')
     parser.add_argument('--classes', type=str, default='data/dreambooth/dataset/prompts_and_classes.txt')
+    parser.add_argument('--manifest', type=str, default='', help='optional benchmark manifest; supplies classes and templates with --prompts manifest')
     parser.add_argument('--prompts', type=str, default=DEFAULT_PROMPTS, help="'dreambooth' (official 25 per subject) or '|'-separated; '{}' is replaced by the subject's class")
     parser.add_argument('--delta_weights', type=str, default='0.1,0.2,0.3,0.4,0.5', help="comma-separated alphas for gss_null + offset + alpha*(gss_prompt - gss_null), one row each when enabled")
     parser.add_argument('--delta_scales', type=str, default='all', help="scales where the modulation delta is added: 'all', '0-6', ...")
@@ -246,6 +257,11 @@ if __name__ == '__main__':
         subjects = args.subjects.split(',') if args.subjects else sorted(
             s for s in os.listdir(args.run_dir) if osp.isfile(osp.join(args.run_dir, s, tag, 'offset.pth')))
     classes = read_classes(args.classes) if osp.isfile(args.classes) else {}
+    manifest_items = {}
+    if args.manifest:
+        with open(args.manifest) as f:
+            manifest_items = {item['subject']: item for item in json.load(f)['subjects']}
+        classes.update({subject: item['class_name'] for subject, item in manifest_items.items()})
 
     vae = load_visual_tokenizer(args)
     vae.requires_grad_(False)
@@ -283,7 +299,7 @@ if __name__ == '__main__':
             image_paths = [osp.join('contents', subject, osp.basename(p)) for p in image_paths]
         train_row = reference_row([transform(Image.open(p).convert('RGB'), tgt_h, tgt_w) for p in image_paths]) if image_paths and all(osp.isfile(p) for p in image_paths) else []
         offset_row = None  # the offset-only row does not depend on the prompt: sampled once per subject
-        for template in prompt_templates(args.prompts, subject):
+        for template in prompt_templates(args.prompts, subject, manifest_items.get(subject)):
             prompt = template.format(cls)
             if prompt not in prompt_cache:
                 prompt_cache[prompt] = encode_prompt(text_tokenizer, text_encoder, prompt)

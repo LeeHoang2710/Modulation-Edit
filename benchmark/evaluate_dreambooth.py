@@ -87,7 +87,10 @@ def main() -> None:
         raise SystemExit(f"No model output directories in {root}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    clip = CLIPModel.from_pretrained(args.clip_model, use_safetensors=True).to(device).eval()
+    # Avoid a safetensors auto-conversion incompatibility in the supported
+    # transformers/huggingface-hub environment. The frozen PyTorch weights are
+    # equivalent for metric computation.
+    clip = CLIPModel.from_pretrained(args.clip_model, use_safetensors=False).to(device).eval()
     processor = CLIPImageProcessor.from_pretrained(args.clip_model)
     tokenizer = CLIPTokenizer.from_pretrained(args.clip_model)
     dino = timm.create_model(args.dino_model, pretrained=True, num_classes=0).to(device).eval()

@@ -1,4 +1,9 @@
-# Five-model DreamBooth benchmark
+# Historical five-model DreamBooth benchmark
+
+> The active protocol is now the ARBooth/ViCo benchmark documented in
+> [`BENCHMARK_VICO.md`](BENCHMARK_VICO.md). This document is retained only for
+> the earlier Google-DreamBooth experiment and must not be used for
+> paper-comparable ARBooth results.
 
 This branch is `five-model-dreambooth-benchmark`. It keeps the five upstream implementations as pinned Git submodules:
 
