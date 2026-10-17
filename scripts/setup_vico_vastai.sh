@@ -50,9 +50,16 @@ create_env vico-modulation
 pip_install vico-modulation "torch==2.5.1" "torchvision==0.20.1" --index-url "https://download.pytorch.org/whl/${CUDA_WHL}"
 install_modulation_requirements
 
+# The exact ARBooth metric protocol uses OpenAI's original CLIP package rather
+# than Hugging Face CLIP. It is installed in the same environment as Infinity
+# so both the released ARBooth code and our method can use one evaluator.
+if ! conda run --no-capture-output -n vico-modulation python -c 'import clip' >/dev/null 2>&1; then
+    conda run --no-capture-output -n vico-modulation python -m pip install 'git+https://github.com/openai/CLIP.git@main#egg=clip'
+fi
+
 # Evaluation: DINO ViT-S/16 and CLIP ViT-B/32.
 create_env benchmark-eval
 pip_install benchmark-eval "torch==2.5.1" "torchvision==0.20.1" --index-url "https://download.pytorch.org/whl/${CUDA_WHL}"
 pip_install benchmark-eval "timm==1.0.11" "transformers==4.45.2" safetensors pillow numpy
 
-echo "Ready: vico-modulation (our offset fitting/inference), benchmark-eval (DINO/CLIP metrics)."
+echo "Ready: vico-modulation (Modulation-Edit, released ARBooth, and exact ARBooth-protocol metrics), benchmark-eval (legacy generic metrics)."

@@ -13,11 +13,15 @@ ENV_NAME="${ENV_NAME:-vico-modulation}"
 EVAL_ENV_NAME="${EVAL_ENV_NAME:-benchmark-eval}"
 SUBJECTS="${SUBJECTS:-all}"
 OFFSET_SEEDS="${OFFSET_SEEDS:-1}"
+SAMPLES_PER_OFFSET="${SAMPLES_PER_OFFSET:-1}"
+INFERENCE_SEED_POLICY="${INFERENCE_SEED_POLICY:-advance}"
+INFERENCE_SEED_BASE="${INFERENCE_SEED_BASE:-0}"
+FIXED_INFERENCE_SEED="${FIXED_INFERENCE_SEED:-0}"
 MAX_PROMPTS="${MAX_PROMPTS:-0}" # 0=all 31 official ViCo prompts; use 5 for a smoke test.
 STEPS="${STEPS:-50}"
-BATCH_SIZE="${BATCH_SIZE:-1}"
+BATCH_SIZE="${BATCH_SIZE:-5}"
 GRAD_ACCUM="${GRAD_ACCUM:-1}"
-LR="${LR:-5e-3}"
+LR="${LR:-4e-3}"
 ALPHA_SCHEDULE="${ALPHA_SCHEDULE:-0.25,0.20,0.15,0.10,0.05}"
 EARLY_CFG="${EARLY_CFG:-1.2}"
 LATE_CFG="${LATE_CFG:-2.0}"
@@ -35,9 +39,10 @@ TRAIN_PY=(conda run --no-capture-output -n "$ENV_NAME" python)
 EVAL_PY=(conda run --no-capture-output -n "$EVAL_ENV_NAME" python)
 
 "${TRAIN_PY[@]}" benchmark/prepare_vico.py
-echo "[run] subjects=$SUBJECTS offset_seeds=$OFFSET_SEEDS prompts=$MAX_PROMPTS variants=$VARIANTS"
+echo "[run] subjects=$SUBJECTS offset_seeds=$OFFSET_SEEDS samples_per_offset=$SAMPLES_PER_OFFSET seed_policy=$INFERENCE_SEED_POLICY prompts=$MAX_PROMPTS variants=$VARIANTS"
 "${TRAIN_PY[@]}" benchmark/run_ours_vico_two_variant.py \
-    --subjects "$SUBJECTS" --offset-seeds "$OFFSET_SEEDS" --max-prompts "$MAX_PROMPTS" \
+    --subjects "$SUBJECTS" --offset-seeds "$OFFSET_SEEDS" --samples-per-offset "$SAMPLES_PER_OFFSET" --max-prompts "$MAX_PROMPTS" \
+    --inference-seed-policy "$INFERENCE_SEED_POLICY" --inference-seed-base "$INFERENCE_SEED_BASE" --fixed-inference-seed "$FIXED_INFERENCE_SEED" \
     --steps "$STEPS" --batch-size "$BATCH_SIZE" --grad-accum "$GRAD_ACCUM" --lr "$LR" \
     --alpha-schedule "$ALPHA_SCHEDULE" --early-cfg "$EARLY_CFG" --late-cfg "$LATE_CFG" \
     --variants "$VARIANTS" --output "$RESULTS" --work-dir "$WORK_DIR"

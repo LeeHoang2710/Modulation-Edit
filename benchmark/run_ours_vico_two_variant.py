@@ -8,9 +8,11 @@ This runner intentionally has two separate phases:
 2. Reuse those exact saved offsets to generate every requested prompt for both
    late-scale ablations: conditional G_prompt and frozen G_null.
 
-Each offset seed produces one image per prompt.  Thus ``--offset-seeds N``
-creates N independently fitted offsets and N images per prompt, rather than
-sampling N images from a single offset.
+``--offset-seeds`` controls independently fitted offsets; ``--samples-per-offset``
+controls inference seeds sampled from each saved offset. The ARBooth-matched
+protocol uses one fitted offset and eight inference samples (seeds 0--7).
+For an optimization-robustness experiment, ``--inference-seed-policy fixed``
+uses the same inference seed sequence for every independently fitted offset.
 """
 from __future__ import annotations
 
@@ -110,14 +112,24 @@ def generate_variant(
             if not offset_path.is_file():
                 raise RuntimeError(f"Missing fitted offset: {offset_path}")
             timing_file = timing_dir / f"train_seed{seed:03d}.json"
+            output_seed_start = seed * args.samples_per_offset
+            generation_seed = (
+                args.fixed_inference_seed
+                if args.inference_seed_policy == "fixed"
+                else args.inference_seed_base + output_seed_start
+            )
             run([
                 sys.executable, "tools/infer_offset_vico_scale_schedule.py",
                 "--offset-path", str(offset_path), "--manifest", str(args.manifest), "--subject", subject,
                 "--out-dir", str(output_root / method), *common_model_args(args),
                 "--text_encoder_ckpt", str(args.text_encoder_ckpt), "--alpha-schedule", args.alpha_schedule,
                 "--early-cfg", str(args.early_cfg), "--late-cfg", str(args.late_cfg), "--late-gss", late_gss,
-                "--num-samples", "1", "--seed", str(args.inference_seed_base + seed),
-                "--output-seed-start", str(seed), "--max-prompts", str(args.max_prompts),
+                "--num-samples", str(args.samples_per_offset),
+                "--seed", str(generation_seed),
+                # Filename indices are unique offset/sample identifiers. With
+                # fixed inference seeds, they intentionally are not g_seed.
+                "--output-seed-start", str(output_seed_start),
+                "--max-prompts", str(args.max_prompts),
                 "--timing-file", str(timing_file),
             ], root)
             timing = json.loads(timing_file.read_text())
@@ -125,7 +137,7 @@ def generate_variant(
             images += int(timing["images"])
 
         prompt_count = min(args.max_prompts, len(item["prompt_templates"])) if args.max_prompts else len(item["prompt_templates"])
-        expected = prompt_count * args.offset_seeds
+        expected = prompt_count * args.offset_seeds * args.samples_per_offset
         actual = sum(1 for p in destination.glob("prompt_*/seed_*.png") if p.is_file())
         if actual != expected:
             raise RuntimeError(f"{method}/{subject}: expected {expected} images, found {actual}")
@@ -136,6 +148,24 @@ def generate_variant(
             "inference_seconds": pure_generation,
             "inference_seconds_per_image": pure_generation / max(images, 1),
             "offset_seeds": args.offset_seeds,
+            "samples_per_offset": args.samples_per_offset,
+            "inference_seed_policy": args.inference_seed_policy,
+            "inference_seed_base": args.inference_seed_base,
+            "fixed_inference_seed": args.fixed_inference_seed if args.inference_seed_policy == "fixed" else None,
+            "output_file_index": "offset_seed * samples_per_offset + sample_index",
+            "output_index_mapping": [
+                {
+                    "output_index": offset_seed * args.samples_per_offset + sample_index,
+                    "offset_training_seed": offset_seed,
+                    "inference_seed": (
+                        args.fixed_inference_seed + sample_index
+                        if args.inference_seed_policy == "fixed"
+                        else args.inference_seed_base + offset_seed * args.samples_per_offset + sample_index
+                    ),
+                }
+                for offset_seed in range(args.offset_seeds)
+                for sample_index in range(args.samples_per_offset)
+            ],
             "images": actual,
             "reference_protocol": "all ViCo subject references; one shared null-text offset for scales 0-4",
             "method_configuration": {
@@ -157,16 +187,22 @@ def main() -> None:
     parser.add_argument("--manifest", default="benchmark/manifests/vico.json")
     parser.add_argument("--subjects", default="all", help="all or comma-separated ViCo subject names")
     parser.add_argument("--offset-seeds", type=int, default=1, help="number of independently fitted offsets per subject")
+    parser.add_argument("--samples-per-offset", type=int, default=1,
+                        help="inference seeds generated from each fitted offset")
     parser.add_argument("--inference-seed-base", type=int, default=0)
+    parser.add_argument("--inference-seed-policy", choices=["advance", "fixed"], default="advance",
+                        help="advance assigns distinct seeds across offsets; fixed reuses one seed sequence for every offset")
+    parser.add_argument("--fixed-inference-seed", type=int, default=0,
+                        help="first g_seed used for every offset when --inference-seed-policy=fixed")
     parser.add_argument("--variants", default="prompt,null", help="comma-separated late modulation variants: prompt,null")
     parser.add_argument("--max-prompts", type=int, default=0, help="0 means all 31; 5 is a fast smoke test")
     parser.add_argument("--output", default="benchmark_outputs_vico")
     parser.add_argument("--work-dir", default="benchmark_work/vico_modulation")
     parser.add_argument("--method-prefix", default="modulation_offset")
     parser.add_argument("--steps", type=int, default=50)
-    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=5)
     parser.add_argument("--grad-accum", type=int, default=1)
-    parser.add_argument("--lr", type=float, default=5e-3)
+    parser.add_argument("--lr", type=float, default=4e-3)
     parser.add_argument("--offset-mode", choices=["per_scale", "shared"], default="per_scale")
     parser.add_argument("--alpha-schedule", default="0.25,0.20,0.15,0.10,0.05")
     parser.add_argument("--early-cfg", type=float, default=1.2)
@@ -177,8 +213,8 @@ def main() -> None:
     parser.add_argument("--text-encoder-ckpt", default="weights/infinity/flan-t5-xl")
     parser.add_argument("--force-optimize", action="store_true")
     args = parser.parse_args()
-    if args.offset_seeds < 1:
-        parser.error("--offset-seeds must be at least 1")
+    if args.offset_seeds < 1 or args.samples_per_offset < 1:
+        parser.error("--offset-seeds and --samples-per-offset must be at least 1")
     if args.max_prompts < 0:
         parser.error("--max-prompts must be non-negative")
     variants = [x.strip() for x in args.variants.split(",") if x.strip()]

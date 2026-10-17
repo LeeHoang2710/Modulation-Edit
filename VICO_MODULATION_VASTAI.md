@@ -17,8 +17,8 @@ For each selected object and each requested offset seed, the workflow is:
    with CFG 2.0. The cross-attention remains the text prompt for both.
 
 `OFFSET_SEEDS=y` therefore fits and saves `x × y` offsets for `x` selected
-objects. Each saved offset produces one image per prompt, so each method has
-`y` generated images per object/prompt.
+objects. `SAMPLES_PER_OFFSET=z` then draws `z` inference seeds from every
+saved offset, so each method has `y × z` generated images per object/prompt.
 
 ## 1. Create a Vast.ai instance and clone the branch
 
@@ -69,7 +69,7 @@ the first five official prompt templates. It prints the pure model generation
 time per output image after metric evaluation.
 
 ```bash
-SUBJECTS=brown_dog OFFSET_SEEDS=1 MAX_PROMPTS=5 \
+SUBJECTS=brown_dog OFFSET_SEEDS=1 SAMPLES_PER_OFFSET=1 MAX_PROMPTS=5 \
   RESULTS=benchmark_outputs_vico_smoke REPORT_DIR=benchmark_reports_vico_smoke \
   bash scripts/run_ours_vico_two_variant.sh
 ```
@@ -106,15 +106,36 @@ The terminal table and each variant's `summary.csv` report:
 The default is one independently fitted offset per object:
 
 ```bash
-OFFSET_SEEDS=1 MAX_PROMPTS=0 bash scripts/run_ours_vico_two_variant.sh
+OFFSET_SEEDS=1 SAMPLES_PER_OFFSET=1 MAX_PROMPTS=0 bash scripts/run_ours_vico_two_variant.sh
 ```
 
 To fit five independent offsets per object, save them locally, then infer from
 each one for both variants:
 
 ```bash
-OFFSET_SEEDS=5 MAX_PROMPTS=0 bash scripts/run_ours_vico_two_variant.sh
+OFFSET_SEEDS=5 SAMPLES_PER_OFFSET=1 MAX_PROMPTS=0 bash scripts/run_ours_vico_two_variant.sh
 ```
+
+### Eight independent offsets with one shared inference seed
+
+For an optimization-robustness experiment, fit eight independently initialized
+five-scale offset bundles (`D_0` through `D_4`), then evaluate every bundle
+with the same generation seed. This isolates offset-training variation from
+sampling variation. It uses the fixed-alpha `G_prompt` formulation:
+`alpha=[0.1]*5`, early CFG `1.0`, late `G_prompt` CFG `2.0`, and prompt
+cross-attention at all scales. Output files remain unique (`seed_000.png` to
+`seed_007.png`), but their number identifies the offset run—not the actual
+generation seed. The subject `timing.json` records the exact index →
+offset-training-seed → inference-seed mapping.
+
+```bash
+FIXED_INFERENCE_SEED=0 bash scripts/run_ours_vico_multi_offset_fixed_seed.sh
+```
+
+This is a multi-offset ensemble experiment, not a one-offset ARBooth-equivalent
+comparison. It uses the exact ARBooth-style evaluator but should be reported
+separately. Use the resulting eight outputs per prompt to report their mean
+and standard deviation across offset-training seeds.
 
 The two variants are always sequential by default:
 
@@ -146,6 +167,11 @@ STEPS=100 LR=1e-3 OFFSET_SEEDS=3 bash scripts/run_ours_vico_two_variant.sh
 All generated images remain under `benchmark_outputs_vico/`; detailed image,
 per-subject, and aggregate numerical results remain under
 `benchmark_reports_vico/`.
+
+For the exact ARBooth 16 × 31 × 8 output and evaluation protocol, use
+[ARBOOTH_PROTOCOL_REPRODUCTION.md](ARBOOTH_PROTOCOL_REPRODUCTION.md). It runs
+the released ARBooth checkpoints and our fixed-alpha comparison independently,
+using ARBooth's own DINO/CLIP metric implementation.
 
 Use a different `RESULTS` and `REPORT_DIR` name for an independent rerun with
 a different number of offset seeds; this prevents old samples from being mixed
