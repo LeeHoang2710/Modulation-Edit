@@ -14,10 +14,18 @@ The CSD-VAR release currently provides the **Switti** implementation, not its un
 
 ## Vast.ai setup
 
-From the repository root:
+Clone the benchmark branch, enter it, and initialise the pinned baseline repositories:
 
 ```bash
+git clone --branch five-model-dreambooth-benchmark --recurse-submodules \
+  https://github.com/LeeHoang2710/Modulation-Edit.git
+cd Modulation-Edit
 git submodule update --init --recursive
+```
+
+Then initialise the environments and download the benchmark assets:
+
+```bash
 bash scripts/setup_five_model_benchmark_envs.sh
 bash scripts/download_five_model_benchmark_assets.sh
 ```
@@ -29,6 +37,13 @@ The downloader obtains the original Google DreamBooth dataset, Infinity/ARBooth 
 ```bash
 export HF_TOKEN=hf_...
 bash scripts/download_five_model_benchmark_assets.sh
+```
+
+Do not put `HF_TOKEN` in a tracked file. To persist it only for the active
+Vast.ai shell, run the `export` command above. To remove it later:
+
+```bash
+unset HF_TOKEN
 ```
 
 Place the separately licensed legacy files at:
