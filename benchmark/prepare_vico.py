@@ -67,7 +67,7 @@ def main() -> None:
             "prompt_templates": live_prompts if is_live else nonlive_prompts,
         })
     payload = {"benchmark": "ViCo personalization benchmark", "prompt_count_per_subject": 31,
-               "paper_samples_per_prompt": 8, "subjects": subjects}
+               "subjects": subjects}
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, indent=2) + "\n")
@@ -77,7 +77,7 @@ def main() -> None:
         for item in subjects:
             writer.writerow({"subject": item["subject"], "class_name": item["class_name"], "is_live": item["is_live"],
                              "references": len(item["reference_images"]), "prompts": len(item["prompt_templates"])})
-    print(f"[manifest] {output}: {len(subjects)} subjects × 31 prompts × 8 paper samples")
+    print(f"[manifest] {output}: {len(subjects)} subjects × 31 prompts")
 
 
 if __name__ == "__main__":

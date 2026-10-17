@@ -41,7 +41,9 @@ def main() -> None:
     parser.add_argument("--late-cfg", type=float, default=2.0)
     parser.add_argument("--late-gss", choices=["prompt", "null"], default="prompt",
                         help="shared AdaLN modulation at scales after the alpha schedule; ca_kv remains prompt in both variants")
-    parser.add_argument("--num-samples", type=int, default=8)
+    # The benchmark runner uses one image from each independently fitted
+    # offset. Additional samples are therefore opt-in, not a paper default.
+    parser.add_argument("--num-samples", type=int, default=1)
     # --seed is defined by add_common_arguments(parser).
     parser.add_argument("--output-seed-start", type=int, default=0,
                         help="first normalized output seed index; lets independently trained offsets share one subject folder")
