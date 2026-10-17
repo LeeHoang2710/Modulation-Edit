@@ -18,6 +18,8 @@ SEED="${SEED:-0}"
 ALPHA_SCHEDULE="${ALPHA_SCHEDULE:-0.25,0.20,0.15,0.10,0.05}"
 EARLY_CFG="${EARLY_CFG:-1.2}"
 LATE_CFG="${LATE_CFG:-2.0}"
+LATE_GSS="${LATE_GSS:-prompt}" # prompt or null; ca_kv stays prompt at all scales
+METHOD_NAME="${METHOD_NAME:-modulation_offset_late_${LATE_GSS}}"
 RESULTS="${RESULTS:-benchmark_outputs_vico}"
 WORK_DIR="${WORK_DIR:-benchmark_work/vico_modulation}"
 
@@ -28,7 +30,7 @@ python_bin=(conda run --no-capture-output -n "$ENV_NAME" python)
     --loss-scales "$LOSS_SCALES" --offset-infer-scales "$OFFSET_INFER_SCALES" \
     --images-per-prompt "$IMAGES_PER_PROMPT" --seed "$SEED" --alpha-schedule "$ALPHA_SCHEDULE" \
     --early-cfg "$EARLY_CFG" --late-cfg "$LATE_CFG" \
-    --output "$RESULTS" --work-dir "$WORK_DIR"
-"${python_bin[@]}" benchmark/evaluate_vico.py --results "$RESULTS" --models modulation_offset
+    --late-gss "$LATE_GSS" --method-name "$METHOD_NAME" --output "$RESULTS" --work-dir "$WORK_DIR"
+"${python_bin[@]}" benchmark/evaluate_vico.py --results "$RESULTS" --models "$METHOD_NAME"
 
 echo "Completed ViCo modulation benchmark: $RESULTS"

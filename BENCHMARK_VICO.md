@@ -50,6 +50,16 @@ The default optimizer supervises and learns offsets only on scales `0-4`;
 override `LOSS_SCALES` and `OFFSET_INFER_SCALES` together only for an explicit
 ablation.
 
+The late-modulation ablation preserves the same early schedule, CFG values,
+and prompt `ca_kv`, but sets scales 5--12 to \(G_{null}\):
+
+```bash
+LATE_GSS=null bash scripts/run_ours_vico_benchmark.sh
+```
+
+The script automatically writes this to a distinct output model directory
+(`modulation_offset_late_null`) so it cannot overwrite the `G_prompt` result.
+
 For an exact ARBooth paper-table comparison, also use upstream ARBooth's
 official evaluator on its required `concept/prompt_XX/` output layout; it adds
 LPIPS diversity. Released baselines must remain inference-only: ARBooth

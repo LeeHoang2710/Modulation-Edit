@@ -4,7 +4,7 @@
 For the default five learned early scales:
   s=0..4: (1-a_s) * (G_null + D_s) + a_s * G_prompt,
            a=[.25,.20,.15,.10,.05], CFG=1.2
-  s=5..12: G_prompt, CFG=2.0
+  s=5..12: G_prompt (or the null-text ablation G_null), CFG=2.0
 
 The conditional cross-attention ``ca_kv`` always uses the prompt. The CFG
 partner uses null ``ca_kv`` and its own null modulation; this makes CFG act on
@@ -38,6 +38,8 @@ def main() -> None:
     parser.add_argument("--alpha-schedule", default="0.25,0.20,0.15,0.10,0.05")
     parser.add_argument("--early-cfg", type=float, default=1.2)
     parser.add_argument("--late-cfg", type=float, default=2.0)
+    parser.add_argument("--late-gss", choices=["prompt", "null"], default="prompt",
+                        help="shared AdaLN modulation at scales after the alpha schedule; ca_kv remains prompt in both variants")
     parser.add_argument("--num-samples", type=int, default=8)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--top-k", type=int, default=900)
@@ -78,8 +80,10 @@ def main() -> None:
 
     coefficients = {scale: (1.0 - value, value) for scale, value in enumerate(alpha)}
     cfg_by_scale = [args.early_cfg] * early_count + [args.late_cfg] * (len(scale_schedule) - early_count)
-    # At late scales row 0 is full G_prompt; the CFG partner remains G_null.
-    gss_sources = {scale: PROMPT for scale in range(early_count, len(scale_schedule))}
+    # The CFG partner always remains G_null. This ablation changes only the
+    # conditional shared AdaLN modulation after the learned early scales.
+    gss_sources = ({scale: PROMPT for scale in range(early_count, len(scale_schedule))}
+                   if args.late_gss == "prompt" else {})
     rows = [(NULL, PROMPT, True, 0.0), (NULL, NULL, True, 0.0)]
     out_root = Path(args.out_dir) / args.subject
     out_root.mkdir(parents=True, exist_ok=True)

@@ -43,6 +43,7 @@ def main() -> None:
                         help="early-scale alpha values; five values means scales 0-4")
     parser.add_argument("--early-cfg", type=float, default=1.2)
     parser.add_argument("--late-cfg", type=float, default=2.0)
+    parser.add_argument("--late-gss", choices=["prompt", "null"], default="prompt")
     parser.add_argument("--pn", default="1M")
     parser.add_argument("--model-path", default="weights/infinity/infinity_2b_reg.pth")
     parser.add_argument("--vae-path", default="weights/infinity/infinity_vae_d32reg.pth")
@@ -100,6 +101,7 @@ def main() -> None:
              "--apply_spatial_patchify", "0", "--checkpoint_type", "torch", "--bf16", "1", "--text_channels", "2048",
              "--text_encoder_ckpt", str(args.text_encoder_ckpt), "--alpha-schedule", args.alpha_schedule,
              "--early-cfg", str(args.early_cfg), "--late-cfg", str(args.late_cfg),
+             "--late-gss", args.late_gss,
              "--num-samples", str(args.images_per_prompt), "--seed", str(args.seed)], root)
         inference = time.monotonic() - started
         images = sum(1 for path in destination.glob("prompt_*/seed_*.png") if path.is_file())
@@ -113,7 +115,7 @@ def main() -> None:
             "reference_protocol": "all ViCo reference images; null-text per-scale modulation offset",
             "method_configuration": {"alpha_schedule": args.alpha_schedule, "early_cfg": args.early_cfg,
                                      "late_cfg": args.late_cfg, "ca_kv": "prompt at all scales",
-                                     "late_modulation": "G_prompt", "loss_scales": args.loss_scales},
+                                     "late_modulation": f"G_{args.late_gss}", "loss_scales": args.loss_scales},
         }, indent=2) + "\n")
         print(f"[done] {subject}: {images} images -> {destination}")
 
