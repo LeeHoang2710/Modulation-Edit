@@ -25,7 +25,7 @@ least 24 GB VRAM is recommended.
 
 ```bash
 cd /workspace
-git clone --branch five-model-dreambooth-benchmark \
+git clone --recurse-submodules --branch five-model-dreambooth-benchmark \
   https://github.com/LeeHoang2710/Modulation-Edit.git
 cd Modulation-Edit
 ```

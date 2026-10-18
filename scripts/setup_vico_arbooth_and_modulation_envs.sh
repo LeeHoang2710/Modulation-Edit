@@ -12,6 +12,15 @@ ARBOOTH_ENV="${ARBOOTH_ENV:-arbooth-vico}"
 MODULATION_ENV="${MODULATION_ENV:-vico-modulation}"
 
 command -v conda >/dev/null 2>&1 || { echo "Install Miniconda first." >&2; exit 1; }
+if [[ ! -f models/ARBooth/requirements.txt ]]; then
+    echo "[setup] Initializing the released ARBooth Git submodule..."
+    git submodule update --init --recursive models/ARBooth
+fi
+[[ -f models/ARBooth/requirements.txt ]] || {
+    echo "ARBooth source is still missing. Re-clone with --recurse-submodules or run:" >&2
+    echo "  git submodule update --init --recursive models/ARBooth" >&2
+    exit 1
+}
 command -v nvcc >/dev/null 2>&1 || {
     echo "Use a Vast.ai CUDA development image: nvcc is required to build FlashAttention." >&2
     exit 1

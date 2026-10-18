@@ -11,6 +11,14 @@ MODULATION_ENV="${MODULATION_ENV:-vico-modulation}"
 HF_TOKEN="${HF_TOKEN:-}"
 
 [[ -n "$HF_TOKEN" ]] || { echo "Set HF_TOKEN to a Hugging Face read token before downloading." >&2; exit 1; }
+if [[ ! -f models/ARBooth/tools/run_arbooth_for_eval.py ]]; then
+    echo "[assets] Initializing the released ARBooth Git submodule..."
+    git submodule update --init --recursive models/ARBooth
+fi
+[[ -f models/ARBooth/tools/run_arbooth_for_eval.py ]] || {
+    echo "ARBooth source is missing. Run: git submodule update --init --recursive models/ARBooth" >&2
+    exit 1
+}
 
 # Download ViCo plus frozen Infinity once.  The asset directory is shared by
 # both isolated environments.
