@@ -17,6 +17,6 @@ colorama
 imageio
 einops
 openai
-httpx==0.20.0
+httpx==0.28.1
 opencv-python
 flash_attn

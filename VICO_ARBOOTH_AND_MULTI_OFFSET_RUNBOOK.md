@@ -47,6 +47,11 @@ This creates:
 - `arbooth-vico` — released ARBooth inference and ARBooth-protocol scoring.
 - `vico-modulation` — the five-scale offset optimizer and scoring.
 
+The installer initializes ARBooth's Git submodule automatically. If an earlier
+run was interrupted, simply rerun the same command and wait for the final
+`Ready:` line. The pip warning about running as `root` is informational inside
+the Vast container.
+
 ## 3. Download data and all weights once
 
 Set a Hugging Face **read** token only in the active shell:

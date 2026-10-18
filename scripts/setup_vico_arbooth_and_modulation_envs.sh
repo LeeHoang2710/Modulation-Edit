@@ -39,10 +39,16 @@ create_env() {
         "torch==2.5.1" "torchvision==0.20.1" --index-url "https://download.pytorch.org/whl/${CUDA_WHL}"
 }
 
-install_without_flash_attention() {
+install_project_requirements() {
     local env="$1" requirements_file="$2" filtered
     filtered="$(mktemp)"
-    sed -E '/^[[:space:]]*flash[_-]attn([[:space:]]|$)/d' "$requirements_file" > "$filtered"
+    # FlashAttention is built after torch is installed.  ARBooth's legacy
+    # httpx pin conflicts with current OpenAI dependencies, so refresh only
+    # that pin without changing the upstream ARBooth requirements file.
+    sed -E \
+        -e '/^[[:space:]]*flash[_-]attn([[:space:]]|$)/d' \
+        -e 's|^[[:space:]]*httpx==0\.20\.0[[:space:]]*$|httpx==0.28.1|' \
+        "$requirements_file" > "$filtered"
     conda run --no-capture-output -n "$env" python -m pip install -r "$filtered"
     command rm -f "$filtered"
     conda run --no-capture-output -n "$env" python -m pip install ninja packaging psutil
@@ -60,11 +66,11 @@ install_metrics() {
 }
 
 create_env "$ARBOOTH_ENV"
-install_without_flash_attention "$ARBOOTH_ENV" models/ARBooth/requirements.txt
+install_project_requirements "$ARBOOTH_ENV" models/ARBooth/requirements.txt
 install_metrics "$ARBOOTH_ENV"
 
 create_env "$MODULATION_ENV"
-install_without_flash_attention "$MODULATION_ENV" requirements.txt
+install_project_requirements "$MODULATION_ENV" requirements.txt
 install_metrics "$MODULATION_ENV"
 
 echo "Ready: $ARBOOTH_ENV (released ARBooth) and $MODULATION_ENV (our strategy)."

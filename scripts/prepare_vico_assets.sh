@@ -9,8 +9,7 @@ cd "$ROOT"
 ENV_NAME="${ENV_NAME:-vico-modulation}"
 WEIGHTS_ROOT="${WEIGHTS_ROOT:-weights}"
 VICO_DIR="${VICO_DIR:-data/vico}"
-HF_TOKEN="${HF_TOKEN:-}"
-hf=(conda run --no-capture-output -n "$ENV_NAME" huggingface-cli)
+PYTHON_BIN=(conda run --no-capture-output -n "$ENV_NAME" python)
 
 if [[ ! -d "$VICO_DIR" ]]; then
     temp_dir="$(mktemp -d)"
@@ -27,14 +26,12 @@ fi
 download() {
     local repository="$1" destination="$2"
     shift 2
-    local token_args=()
-    [[ -n "$HF_TOKEN" ]] && token_args=(--token "$HF_TOKEN")
-    mkdir -p "$destination"
-    "${hf[@]}" download "$repository" "$@" --local-dir "$destination" "${token_args[@]}"
+    "${PYTHON_BIN[@]}" scripts/download_hf_assets.py \
+        --repo-id "$repository" --local-dir "$destination" --include "$@"
 }
 
 download FoundationVision/Infinity "$WEIGHTS_ROOT/infinity" infinity_2b_reg.pth infinity_vae_d32reg.pth
 download google/flan-t5-xl "$WEIGHTS_ROOT/infinity/flan-t5-xl"
 
-conda run --no-capture-output -n "$ENV_NAME" python benchmark/prepare_vico.py --inputs "$VICO_DIR"
+"${PYTHON_BIN[@]}" benchmark/prepare_vico.py --inputs "$VICO_DIR"
 echo "ViCo assets are ready."

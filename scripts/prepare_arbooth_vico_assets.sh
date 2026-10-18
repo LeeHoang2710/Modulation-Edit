@@ -7,7 +7,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 ENV_NAME="${ENV_NAME:-vico-modulation}"
-HF_TOKEN="${HF_TOKEN:-}"
 ARBOOTH_REPO="${ARBOOTH_REPO:-wldn0202/ARBooth}"
 ARBOOTH_DIR="${ARBOOTH_DIR:-weights/arbooth/released}"
 PREFETCH_EVALUATORS="${PREFETCH_EVALUATORS:-1}"
@@ -20,17 +19,15 @@ CONDA_BASE="$(conda info --base)"
 # shellcheck disable=SC1091
 source "${CONDA_BASE}/etc/profile.d/conda.sh"
 PYTHON_BIN=(conda run --no-capture-output -n "$ENV_NAME" python)
-HF=(conda run --no-capture-output -n "$ENV_NAME" huggingface-cli)
 
 # This fetches the ViCo references/prompts, Infinity-2B, Infinity-VAE, and
 # Flan-T5 exactly as the current modulation benchmark already expects.
-ENV_NAME="$ENV_NAME" HF_TOKEN="$HF_TOKEN" bash scripts/prepare_vico_assets.sh
+ENV_NAME="$ENV_NAME" bash scripts/prepare_vico_assets.sh
 
-token_args=()
-[[ -n "$HF_TOKEN" ]] && token_args=(--token "$HF_TOKEN")
 mkdir -p "$ARBOOTH_DIR"
 echo "[download] $ARBOOTH_REPO -> $ARBOOTH_DIR (16 released subject checkpoints; roughly 72 GB)"
-"${HF[@]}" download "$ARBOOTH_REPO" --include 'ckpts/*.pth' --local-dir "$ARBOOTH_DIR" "${token_args[@]}"
+"${PYTHON_BIN[@]}" scripts/download_hf_assets.py \
+    --repo-id "$ARBOOTH_REPO" --local-dir "$ARBOOTH_DIR" --include 'ckpts/*.pth'
 
 "${PYTHON_BIN[@]}" benchmark/prepare_arbooth_checkpoint_layout.py \
     --flat-dir "$ARBOOTH_DIR/ckpts" --output weights/arbooth/by_subject
