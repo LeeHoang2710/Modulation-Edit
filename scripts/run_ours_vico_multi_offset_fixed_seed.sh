@@ -25,6 +25,7 @@ METHOD_PREFIX="${METHOD_PREFIX:-ours_multi_offset8_fixed_seed}"
 RESULTS="${RESULTS:-benchmark_outputs_vico_multi_offset8_seed${FIXED_INFERENCE_SEED}}"
 WORK_DIR="${WORK_DIR:-benchmark_work/vico_multi_offset8_seed${FIXED_INFERENCE_SEED}}"
 REPORT_DIR="${REPORT_DIR:-benchmark_reports_vico_multi_offset8_seed${FIXED_INFERENCE_SEED}}"
+SELECTION="${SELECTION:-best-dino}"
 
 command -v conda >/dev/null 2>&1 || {
     echo "conda is required; run scripts/setup_vico_vastai.sh first." >&2
@@ -53,6 +54,7 @@ echo "[multi-offset] subjects=$SUBJECTS offsets=8; fixed g_seed=$FIXED_INFERENCE
     --results "$RESULTS/${METHOD_PREFIX}_late_prompt" \
     --model-name "${METHOD_PREFIX}" --subjects "$SUBJECTS" --max-prompts "$MAX_PROMPTS" \
     --report-dir "$REPORT_DIR" --expected-images-per-prompt 8 \
+    --selection "$SELECTION" \
     --text-protocol arbooth-code
 
 echo "[complete] Images: $RESULTS/${METHOD_PREFIX}_late_prompt"

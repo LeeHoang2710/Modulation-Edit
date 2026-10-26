@@ -90,6 +90,16 @@ def mean_cross_similarity(left: torch.Tensor, right: torch.Tensor) -> float:
     return float((left @ right.T).mean().item())
 
 
+def select_highest_dino(reference_features: torch.Tensor, generated_features: torch.Tensor) -> int:
+    """Return the generated image with the highest mean DINO similarity.
+
+    Each candidate is compared to every ViCo reference of the subject.  This
+    is a per-prompt oracle selection, so it must be reported separately from
+    the standard mean-over-eight evaluation.
+    """
+    return int((reference_features @ generated_features.T).mean(dim=0).argmax().item())
+
+
 def output_images(prompt_dir: Path) -> list[Path]:
     # Both official ARBooth (00.jpg) and our runner (seed_000.png) satisfy this.
     return [path for path in image_paths(prompt_dir) if re.fullmatch(r"(?:seed_)?\d+", path.stem)]
@@ -143,6 +153,8 @@ def main() -> None:
     parser.add_argument("--subjects", default="all")
     parser.add_argument("--max-prompts", type=int, default=0, help="0 evaluates all 31 prompts")
     parser.add_argument("--expected-images-per-prompt", type=int, default=8)
+    parser.add_argument("--selection", choices=["mean8", "best-dino"], default="mean8",
+                        help="mean8 scores all outputs; best-dino retains the output with highest I-DINO per prompt")
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--text-protocol", choices=["arbooth-code", "rendered-class"], default="arbooth-code")
     parser.add_argument("--clip-device", default="auto", help="auto, cpu, or cuda")
@@ -221,17 +233,27 @@ def main() -> None:
             generated_dino = dino_features(generated, dino, dino_device, args.batch_size)
             generated_clip = clip_image_features(generated, clip_model, clip_preprocess_exact, clip_device, args.batch_size)
             text = clip_text_feature(metric_prompt, clip, clip_model, clip_device).cpu()
+            selected_image = ""
+            if args.selection == "best-dino":
+                selected = select_highest_dino(ref_dino, generated_dino)
+                generated_for_score_dino = generated_dino[selected:selected + 1]
+                generated_for_score_clip = generated_clip[selected:selected + 1]
+                selected_image = generated[selected].name
+            else:
+                generated_for_score_dino = generated_dino
+                generated_for_score_clip = generated_clip
             scores = {
-                "i_dino": mean_cross_similarity(ref_dino, generated_dino),
-                "i_clip": mean_cross_similarity(ref_clip, generated_clip),
-                "t_clip": mean_cross_similarity(text, generated_clip),
+                "i_dino": mean_cross_similarity(ref_dino, generated_for_score_dino),
+                "i_clip": mean_cross_similarity(ref_clip, generated_for_score_clip),
+                "t_clip": mean_cross_similarity(text, generated_for_score_clip),
             }
             for metric, value in scores.items():
                 concept_scores[metric].append(value)
             prompt_rows.append({
                 "model": args.model_name, "subject": subject, "prompt_index": prompt_index,
                 "template": template, "metric_prompt": metric_prompt,
-                "generated_images": len(generated), **scores,
+                "generated_images": len(generated), "selection": args.selection,
+                "selected_image": selected_image, **scores,
             })
 
         subject_rows.append({
@@ -239,6 +261,7 @@ def main() -> None:
             "subject": subject,
             "prompts": len(templates),
             "generated_images": len(templates) * args.expected_images_per_prompt,
+            "selection": args.selection,
             **{metric: float(np.mean(concept_scores[metric])) for metric in METRIC_FIELDS},
             "preparation_seconds_per_object": timing.get("preparation_seconds"),
             "inference_seconds_per_image": timing.get("inference_seconds_per_image"),
@@ -248,6 +271,7 @@ def main() -> None:
 
     overall = {
         "model": args.model_name,
+        "selection": args.selection,
         "subjects": len(subject_rows),
         "prompts_per_subject": len(subject_rows) and subject_rows[0]["prompts"],
         "inference_images": sum(row["generated_images"] for row in subject_rows),
