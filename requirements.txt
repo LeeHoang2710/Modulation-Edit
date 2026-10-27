@@ -8,7 +8,9 @@ omegaconf
 pandas
 timm==0.9.6
 decord
-transformers
+# Transformers 5.x disables PyTorch 2.5.1 at import time. Infinity uses the
+# PyTorch 2.5.1 CUDA wheel for FlexAttention, so keep a compatible 4.x release.
+transformers==4.46.3
 torch==2.5.1
 pytz
 pandas
