@@ -17,7 +17,7 @@ LIVE = {"black_cat", "brown_cat", "brown_dog", "brown_dog2", "fat_dog"}
 CLASSES = {
     "alarm_clock": "clock", "black_cat": "cat", "brown_cat": "cat",
     "brown_dog": "dog", "brown_dog2": "dog", "brown_teddybear": "teddybear",
-    "cat_statue": "statue", "duck_toy": "toy", "elephant_statue": "statue",
+    "cat_statue": "cat statue", "duck_toy": "duck toy", "elephant_statue": "elephant statue",
     "fat_dog": "dog", "monster_toy": "toy", "pink_sunglasses": "sunglasses",
     "red_teapot": "teapot", "red_vase": "vase", "tortoise_plushy": "plushy",
     "wooden_barn": "barn",
