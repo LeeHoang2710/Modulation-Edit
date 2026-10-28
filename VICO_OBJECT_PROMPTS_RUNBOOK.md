@@ -106,6 +106,34 @@ cd /workspace/Modulation-Edit
 bash scripts/run_ours_vico_object_prompt_smoke.sh
 ```
 
+### Alpha-schedule ablations
+
+`ALPHA_SCHEDULE` is a comma-separated five-value list for learned scales
+`0, 1, 2, 3, 4`, respectively. Use a separate output/work/report directory
+for each ablation so generated images and metric CSVs are not overwritten.
+
+Equal alpha `0.15` at all five scales:
+
+```bash
+cd /workspace/Modulation-Edit
+ALPHA_SCHEDULE='0.15,0.15,0.15,0.15,0.15' \
+RESULTS=benchmark_outputs_vico_cat_statue_alpha_equal015 \
+WORK_DIR=benchmark_work/vico_cat_statue_alpha_equal015 \
+REPORT_DIR=benchmark_reports_vico_cat_statue_alpha_equal015 \
+bash scripts/run_ours_vico_object_prompt_smoke.sh
+```
+
+Linear increasing alpha from `0.05` to `0.25`:
+
+```bash
+cd /workspace/Modulation-Edit
+ALPHA_SCHEDULE='0.05,0.10,0.15,0.20,0.25' \
+RESULTS=benchmark_outputs_vico_cat_statue_alpha_increasing \
+WORK_DIR=benchmark_work/vico_cat_statue_alpha_increasing \
+REPORT_DIR=benchmark_reports_vico_cat_statue_alpha_increasing \
+bash scripts/run_ours_vico_object_prompt_smoke.sh
+```
+
 Inspect the rendered prompts:
 
 ```bash
@@ -128,7 +156,8 @@ Current method configuration:
 - Eight independent offset optimizations per subject, one fixed inference seed per offset.
 - `50` optimization steps; batch size `5`; gradient accumulation `1`; learning rate `4e-3`.
 - Linear alpha schedule `[0.25, 0.20, 0.15, 0.10, 0.05]` at scales `0–4`; early CFG `1.2`; late `G_prompt` CFG `2.0`; prompt cross-attention at all scales.
-- Evaluation: highest-DINO selection from the eight candidates per subject-prompt pair.
+- Evaluation: `mean8`, i.e. the standard mean across all eight independently optimized offset outputs per subject-prompt pair; no oracle best-DINO selection.
+- Terminal output is limited to a `128`-offset progress bar, then a `3,968`-image progress bar. Detailed optimizer and per-image output is stored in `benchmark_work/.../logs/`.
 
 ```bash
 cd /workspace/Modulation-Edit
@@ -140,7 +169,7 @@ REPORT_DIR=benchmark_reports_vico_object_prompts \
 bash scripts/run_ours_vico_multi_offset_fixed_seed.sh
 ```
 
-`MAX_PROMPTS=0` means all 31 ViCo templates. The runner defaults to the same linear alpha schedule, early CFG, late CFG, prompt cross-attention, and `G_prompt` formulation as the smoke test. The run creates `16 × 31 × 8 = 3,968` images before best-DINO selection.
+`MAX_PROMPTS=0` means all 31 ViCo templates. The runner defaults to the same linear alpha schedule, early CFG, late CFG, prompt cross-attention, and `G_prompt` formulation as the smoke test. The run creates `16 × 31 × 8 = 3,968` images and evaluates their mean score. `summary.csv` also reports preparation time per offset and pure inference time per image, each as mean ± population standard deviation across all measured offset-level samples.
 
 ## 7. Non-oracle mean-of-eight ablation
 

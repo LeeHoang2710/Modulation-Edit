@@ -27,7 +27,8 @@ METHOD_PREFIX="${METHOD_PREFIX:-ours_multi_offset${OFFSET_SEEDS}_fixed_seed}"
 RESULTS="${RESULTS:-benchmark_outputs_vico_multi_offset8_seed${FIXED_INFERENCE_SEED}}"
 WORK_DIR="${WORK_DIR:-benchmark_work/vico_multi_offset8_seed${FIXED_INFERENCE_SEED}}"
 REPORT_DIR="${REPORT_DIR:-benchmark_reports_vico_multi_offset8_seed${FIXED_INFERENCE_SEED}}"
-SELECTION="${SELECTION:-best-dino}"
+LOG_DIR="${LOG_DIR:-${WORK_DIR}/logs}"
+SELECTION="${SELECTION:-mean8}"
 
 if [[ -x "$VICO_PYTHON" ]]; then
     # Vast.ai images commonly provide this already-built virtual environment.
@@ -53,7 +54,7 @@ echo "[multi-offset] subjects=$SUBJECTS offsets=$OFFSET_SEEDS; fixed g_seed=$FIX
     --grad-accum "$GRAD_ACCUM" --lr "$LR" \
     --alpha-schedule "$ALPHA_SCHEDULE" --early-cfg "$EARLY_CFG" --late-cfg "$LATE_CFG" \
     --variants prompt --method-prefix "$METHOD_PREFIX" \
-    --output "$RESULTS" --work-dir "$WORK_DIR"
+    --output "$RESULTS" --work-dir "$WORK_DIR" --log-dir "$LOG_DIR"
 
 # This evaluator matches ARBooth's released DINO/CLIP protocol. Each image is
 # produced from an independently optimized offset, not a stochastic re-sample.
@@ -66,3 +67,4 @@ echo "[multi-offset] subjects=$SUBJECTS offsets=$OFFSET_SEEDS; fixed g_seed=$FIX
 
 echo "[complete] Images: $RESULTS/${METHOD_PREFIX}_late_prompt"
 echo "[complete] Metrics: $REPORT_DIR/summary.csv"
+echo "[complete] Run logs: $LOG_DIR"

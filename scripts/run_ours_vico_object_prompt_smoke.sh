@@ -15,6 +15,10 @@ STEPS="${STEPS:-50}"
 BATCH_SIZE="${BATCH_SIZE:-5}"
 GRAD_ACCUM="${GRAD_ACCUM:-1}"
 LR="${LR:-4e-3}"
+# Five entries map directly to learned scales 0, 1, 2, 3, and 4.
+# Override at launch, e.g.:
+#   equal alpha:      ALPHA_SCHEDULE='0.15,0.15,0.15,0.15,0.15' bash "$0"
+#   linear increasing: ALPHA_SCHEDULE='0.05,0.10,0.15,0.20,0.25' bash "$0"
 ALPHA_SCHEDULE="${ALPHA_SCHEDULE:-0.25,0.20,0.15,0.10,0.05}"
 EARLY_CFG="${EARLY_CFG:-1.2}"
 LATE_CFG="${LATE_CFG:-2.0}"

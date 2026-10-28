@@ -59,7 +59,11 @@ install_project_requirements() {
 
 install_metrics() {
     local env="$1"
-    conda run --no-capture-output -n "$env" python -m pip install pillow numpy pandas 'timm==0.9.6'
+    # Newer Transformers releases require PyTorch >=2.6 and silently disable
+    # model classes when used with our CUDA 12.1 / PyTorch 2.5.1 environment.
+    # This version supports T5 while remaining compatible with PyTorch 2.5.
+    conda run --no-capture-output -n "$env" python -m pip install \
+        'transformers==4.46.3' pillow numpy pandas 'timm==0.9.6'
     if ! conda run --no-capture-output -n "$env" python -c 'import clip' >/dev/null 2>&1; then
         conda run --no-capture-output -n "$env" python -m pip install 'git+https://github.com/openai/CLIP.git@main#egg=clip'
     fi

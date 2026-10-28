@@ -119,7 +119,9 @@ def main() -> None:
             if not cv2.imwrite(str(path), image):
                 raise OSError(f"Could not write {path}")
             written += 1
-        print(f"[saved] {prompt_dir} ({args.num_samples} samples)", flush=True)
+            # Consumed by the benchmark parent process to maintain its global
+            # image-level tqdm bar. Full paths remain in its .log file.
+            print(f"[image] {path}", flush=True)
     if args.timing_file:
         timing_path = Path(args.timing_file)
         timing_path.parent.mkdir(parents=True, exist_ok=True)

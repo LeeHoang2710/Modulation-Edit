@@ -27,7 +27,15 @@ report; `inference_seconds_per_image` is deliberately left empty.
 
 ## Prerequisites
 
-On a CUDA-capable Vast.ai server, from the project root, initialize the
+On a CUDA-capable Vast.ai server, clone the benchmark branch and enter the
+repository:
+
+```bash
+git clone --branch five-model-dreambooth-benchmark https://github.com/LeeHoang2710/Modulation-Edit.git
+cd Modulation-Edit
+```
+
+From the project root, initialize the
 CSD-VAR submodule and create its separate environment:
 
 ```bash

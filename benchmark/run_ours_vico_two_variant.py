@@ -21,15 +21,52 @@ import json
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
+
+from tqdm.auto import tqdm
 
 
 EARLY_SCALES = "0-4"
 
 
-def run(command: list[str], root: Path) -> None:
-    print("[exec]", " ".join(command), flush=True)
-    subprocess.run(command, cwd=root, check=True)
+def run(
+    command: list[str],
+    root: Path,
+    log_file=None,
+    image_progress: tqdm | None = None,
+) -> None:
+    """Run a child command without streaming its verbose output to the terminal.
+
+    Child stdout/stderr goes to ``log_file``.  The inference helper emits one
+    ``[image]`` event per successfully written PNG, which gives the parent an
+    accurate image-level tqdm bar without parsing model-specific log text.
+    """
+    # Manifest generation is the one possible pre-log operation. The normal
+    # benchmark launcher creates it beforehand, but keep direct Python use
+    # backwards-compatible.
+    if log_file is None:
+        subprocess.run(command, cwd=root, check=True)
+        return
+    log_file.write("\n$ " + " ".join(command) + "\n")
+    log_file.flush()
+    process = subprocess.Popen(
+        command,
+        cwd=root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    assert process.stdout is not None
+    for line in process.stdout:
+        log_file.write(line)
+        if image_progress is not None and line.startswith("[image] "):
+            image_progress.update(1)
+    status = process.wait()
+    log_file.flush()
+    if status:
+        raise subprocess.CalledProcessError(status, command)
 
 
 def load_manifest(path: Path) -> list[dict]:
@@ -58,34 +95,59 @@ def common_model_args(args: argparse.Namespace) -> list[str]:
     ]
 
 
-def fit_offsets(args: argparse.Namespace, root: Path, subjects: list[dict], work_root: Path) -> dict[str, list[float]]:
+def fit_offsets(
+    args: argparse.Namespace,
+    root: Path,
+    subjects: list[dict],
+    work_root: Path,
+    log_file,
+) -> dict[str, list[float | None]]:
     """Fit every X*Y offset before any prompt-conditioned generation begins."""
-    preparation: dict[str, list[float]] = {item["subject"]: [] for item in subjects}
-    for item in subjects:
-        subject = item["subject"]
-        references = (root / item["reference_dir"]).resolve()
-        for seed in range(args.offset_seeds):
-            work = work_root / "offsets" / subject / f"train_seed{seed:03d}"
-            offset_path = work / "offset.pth"
-            reconstruction = work / "reconstruction.jpg"
-            if offset_path.is_file() and not args.force_optimize:
-                print(f"[offset exists] {subject} train_seed={seed}: {offset_path}", flush=True)
-                preparation[subject].append(0.0)
-                continue
-            work.mkdir(parents=True, exist_ok=True)
-            started = time.perf_counter()
-            run([
-                sys.executable, "tools/optimize_ada_offset.py", "--mode", "optimize", "--images", str(references),
-                *common_model_args(args), "--seed", str(seed), "--hflip", "0", "--grad_checkpointing", "1",
-                "--offset_mode", args.offset_mode, "--iters", str(args.steps),
-                "--batch_size", str(args.batch_size), "--grad_accum", str(args.grad_accum), "--lr", str(args.lr),
-                "--loss_scales", EARLY_SCALES, "--offset_infer_scales", EARLY_SCALES,
-                "--num_samples", "1", "--sample_every", "0", "--save_offset", str(offset_path),
-                "--save_file", str(reconstruction),
-            ], root)
-            elapsed = time.perf_counter() - started
-            preparation[subject].append(elapsed)
-            print(f"[offset saved] {subject} train_seed={seed} elapsed={elapsed:.1f}s", flush=True)
+    preparation: dict[str, list[float | None]] = {item["subject"]: [] for item in subjects}
+    total_offsets = len(subjects) * args.offset_seeds
+    with tqdm(total=total_offsets, desc="phase 1/2 offsets", unit="offset", dynamic_ncols=True) as progress:
+        for item in subjects:
+            subject = item["subject"]
+            references = (root / item["reference_dir"]).resolve()
+            for seed in range(args.offset_seeds):
+                work = work_root / "offsets" / subject / f"train_seed{seed:03d}"
+                offset_path = work / "offset.pth"
+                reconstruction = work / "reconstruction.jpg"
+                preparation_timing_path = work / "preparation_timing.json"
+                if offset_path.is_file() and not args.force_optimize:
+                    cached_seconds = None
+                    if preparation_timing_path.is_file():
+                        cached_seconds = json.loads(preparation_timing_path.read_text()).get("seconds")
+                    log_file.write(
+                        f"[offset exists] {subject} train_seed={seed}: {offset_path}; "
+                        f"preparation_seconds={cached_seconds}\n"
+                    )
+                    # Use the original recorded fit time when it is available;
+                    # older cached offsets without this sidecar remain unknown.
+                    preparation[subject].append(float(cached_seconds) if cached_seconds is not None else None)
+                    progress.update(1)
+                    continue
+                work.mkdir(parents=True, exist_ok=True)
+                started = time.perf_counter()
+                run([
+                    sys.executable, "tools/optimize_ada_offset.py", "--mode", "optimize", "--images", str(references),
+                    *common_model_args(args), "--seed", str(seed), "--hflip", "0", "--grad_checkpointing", "1",
+                    "--offset_mode", args.offset_mode, "--iters", str(args.steps),
+                    "--batch_size", str(args.batch_size), "--grad_accum", str(args.grad_accum), "--lr", str(args.lr),
+                    "--loss_scales", EARLY_SCALES, "--offset_infer_scales", EARLY_SCALES,
+                    "--num_samples", "1", "--sample_every", "0", "--save_offset", str(offset_path),
+                    "--save_file", str(reconstruction),
+                ], root, log_file)
+                elapsed = time.perf_counter() - started
+                preparation_timing_path.write_text(json.dumps({
+                    "subject": subject,
+                    "offset_training_seed": seed,
+                    "seconds": elapsed,
+                }, indent=2) + "\n")
+                preparation[subject].append(elapsed)
+                log_file.write(f"[offset saved] {subject} train_seed={seed} elapsed={elapsed:.1f}s\n")
+                log_file.flush()
+                progress.update(1)
     return preparation
 
 
@@ -96,10 +158,11 @@ def generate_variant(
     work_root: Path,
     output_root: Path,
     late_gss: str,
-    preparation: dict[str, list[float]],
+    preparation: dict[str, list[float | None]],
+    log_file,
+    image_progress: tqdm,
 ) -> None:
     method = f"{args.method_prefix}_late_{late_gss}"
-    print(f"========== [variant] {method} ==========", flush=True)
     for item in subjects:
         subject = item["subject"]
         destination = output_root / method / subject
@@ -107,6 +170,7 @@ def generate_variant(
         timing_dir.mkdir(parents=True, exist_ok=True)
         pure_generation = 0.0
         images = 0
+        per_offset_inference_seconds_per_image: list[float] = []
         for seed in range(args.offset_seeds):
             offset_path = work_root / "offsets" / subject / f"train_seed{seed:03d}" / "offset.pth"
             if not offset_path.is_file():
@@ -131,10 +195,13 @@ def generate_variant(
                 "--output-seed-start", str(output_seed_start),
                 "--max-prompts", str(args.max_prompts),
                 "--timing-file", str(timing_file),
-            ], root)
+            ], root, log_file, image_progress)
             timing = json.loads(timing_file.read_text())
             pure_generation += float(timing["generation_seconds"])
             images += int(timing["images"])
+            per_offset_inference_seconds_per_image.append(
+                float(timing["generation_seconds"]) / max(int(timing["images"]), 1)
+            )
 
         prompt_count = min(args.max_prompts, len(item["prompt_templates"])) if args.max_prompts else len(item["prompt_templates"])
         expected = prompt_count * args.offset_seeds * args.samples_per_offset
@@ -142,11 +209,16 @@ def generate_variant(
         if actual != expected:
             raise RuntimeError(f"{method}/{subject}: expected {expected} images, found {actual}")
         prep_times = preparation[subject]
+        measured_prep_times = [value for value in prep_times if value is not None]
         timing = {
-            "preparation_seconds": sum(prep_times),
-            "preparation_seconds_per_offset": sum(prep_times) / max(len(prep_times), 1),
+            "preparation_seconds": sum(measured_prep_times),
+            "preparation_seconds_per_offset": (
+                sum(measured_prep_times) / len(measured_prep_times) if measured_prep_times else None
+            ),
+            "preparation_seconds_by_offset": prep_times,
             "inference_seconds": pure_generation,
             "inference_seconds_per_image": pure_generation / max(images, 1),
+            "inference_seconds_per_image_by_offset": per_offset_inference_seconds_per_image,
             "offset_seeds": args.offset_seeds,
             "samples_per_offset": args.samples_per_offset,
             "inference_seed_policy": args.inference_seed_policy,
@@ -179,7 +251,8 @@ def generate_variant(
         }
         destination.mkdir(parents=True, exist_ok=True)
         (destination / "timing.json").write_text(json.dumps(timing, indent=2) + "\n")
-        print(f"[done] {method}/{subject}: images={actual} inference={timing['inference_seconds_per_image']:.3f}s/image", flush=True)
+        log_file.write(f"[done] {method}/{subject}: images={actual} inference={timing['inference_seconds_per_image']:.3f}s/image\n")
+        log_file.flush()
 
 
 def main() -> None:
@@ -212,6 +285,7 @@ def main() -> None:
     parser.add_argument("--vae-path", default="weights/infinity/infinity_vae_d32reg.pth")
     parser.add_argument("--text-encoder-ckpt", default="weights/infinity/flan-t5-xl")
     parser.add_argument("--force-optimize", action="store_true")
+    parser.add_argument("--log-dir", default="", help="directory for timestamped child-process logs; defaults to <work-dir>/logs")
     args = parser.parse_args()
     if args.offset_seeds < 1 or args.samples_per_offset < 1:
         parser.error("--offset-seeds and --samples-per-offset must be at least 1")
@@ -234,11 +308,26 @@ def main() -> None:
     output_root = (root / args.output).resolve()
     work_root = (root / args.work_dir).resolve()
 
-    print(f"[phase 1/2] fitting {len(subjects) * args.offset_seeds} offsets (subjects={len(subjects)}, offset_seeds={args.offset_seeds})", flush=True)
-    preparation = fit_offsets(args, root, subjects, work_root)
-    print("[phase 2/2] prompt-conditioned ViCo inference", flush=True)
-    for late_gss in variants:
-        generate_variant(args, root, subjects, work_root, output_root, late_gss, preparation)
+    log_dir = Path(args.log_dir).resolve() if args.log_dir else work_root / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"vico_modulation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    prompts_per_subject = [
+        min(args.max_prompts, len(item["prompt_templates"])) if args.max_prompts else len(item["prompt_templates"])
+        for item in subjects
+    ]
+    total_images = sum(prompts_per_subject) * args.offset_seeds * args.samples_per_offset * len(variants)
+    try:
+        with log_path.open("w", encoding="utf-8", buffering=1) as log_file:
+            log_file.write(f"ViCo modulation run started: {datetime.now().isoformat()}\n")
+            log_file.write(f"subjects={len(subjects)} offset_seeds={args.offset_seeds} variants={variants}\n")
+            preparation = fit_offsets(args, root, subjects, work_root, log_file)
+            with tqdm(total=total_images, desc="phase 2/2 images", unit="image", dynamic_ncols=True) as image_progress:
+                for late_gss in variants:
+                    generate_variant(args, root, subjects, work_root, output_root, late_gss, preparation,
+                                     log_file, image_progress)
+    except subprocess.CalledProcessError as error:
+        raise SystemExit(f"A child command failed (exit {error.returncode}). Details: {log_path}") from error
+    print(f"[complete] Detailed run log: {log_path}", flush=True)
 
 
 if __name__ == "__main__":

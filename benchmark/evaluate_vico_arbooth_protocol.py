@@ -142,6 +142,21 @@ def finite_mean(values: list[float | None]) -> float | None:
     return float(np.mean(valid)) if valid else None
 
 
+def finite_mean_std(values: list[float | None]) -> tuple[float | None, float | None]:
+    """Population mean/std over measured timing samples only.
+
+    Cached offsets are represented as ``null`` in timing.json and deliberately
+    excluded: they are not a new preparation measurement.
+    """
+    valid = np.asarray(
+        [float(value) for value in values if value is not None and math.isfinite(float(value))],
+        dtype=np.float64,
+    )
+    if not len(valid):
+        return None, None
+    return float(valid.mean()), float(valid.std(ddof=0))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results", required=True,
@@ -207,6 +222,8 @@ def main() -> None:
 
     subject_rows: list[dict] = []
     prompt_rows: list[dict] = []
+    preparation_samples: list[float | None] = []
+    inference_samples: list[float | None] = []
     for item in subjects:
         subject = item["subject"]
         subject_dir = results / subject
@@ -218,6 +235,8 @@ def main() -> None:
         ref_dino = dino_features(ref_paths, dino, dino_device, args.batch_size)
         ref_clip = clip_image_features(ref_paths, clip_model, clip_preprocess_exact, clip_device, args.batch_size)
         timing = load_timing(subject_dir)
+        preparation_samples.extend(timing.get("preparation_seconds_by_offset", []))
+        inference_samples.extend(timing.get("inference_seconds_per_image_by_offset", []))
         templates = item["prompt_templates"][:args.max_prompts or None]
         concept_scores: dict[str, list[float]] = defaultdict(list)
 
@@ -269,6 +288,8 @@ def main() -> None:
         })
         print(f"[scored] {subject}: {len(templates)} prompts x {args.expected_images_per_prompt} images", flush=True)
 
+    preparation_mean, preparation_std = finite_mean_std(preparation_samples)
+    inference_mean, inference_std = finite_mean_std(inference_samples)
     overall = {
         "model": args.model_name,
         "selection": args.selection,
@@ -279,6 +300,11 @@ def main() -> None:
         "preparation_seconds_per_object": finite_mean([row["preparation_seconds_per_object"] for row in subject_rows]),
         "inference_seconds_per_image": finite_mean([row["inference_seconds_per_image"] for row in subject_rows]),
         "end_to_end_seconds_per_image": finite_mean([row["end_to_end_seconds_per_image"] for row in subject_rows]),
+        "preparation_seconds_per_offset_mean": preparation_mean,
+        "preparation_seconds_per_offset_std": preparation_std,
+        "inference_seconds_per_image_mean": inference_mean,
+        "inference_seconds_per_image_std": inference_std,
+        "timing_std_definition": "population standard deviation over measured offset-level samples",
         "text_protocol": args.text_protocol,
         "dino_model": "facebookresearch/dino:main:dino_vits16",
         "clip_model": "openai/CLIP:ViT-B/32",
@@ -289,7 +315,12 @@ def main() -> None:
     write_csv(report_dir / "summary.csv", [overall], list(overall))
     (report_dir / "summary.json").write_text(json.dumps(overall, indent=2) + "\n")
     print("[overall] " + " ".join(f"{metric}={overall[metric]:.5f}" for metric in METRIC_FIELDS), flush=True)
-    print(f"[overall] time={overall['inference_seconds_per_image']} s/image", flush=True)
+    print(
+        "[overall] timing "
+        f"prepare={preparation_mean} +/- {preparation_std} s/offset; "
+        f"infer={inference_mean} +/- {inference_std} s/image",
+        flush=True,
+    )
     print(f"[saved] {report_dir}", flush=True)
 
 

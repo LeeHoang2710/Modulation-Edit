@@ -77,6 +77,7 @@ Our strategy: one subject, five prompts, eight independently learned offsets,
 each generated with exactly the same inference seed:
 
 ```bash
+ALPHA_SCHEDULE='0.25,0.20,0.15,0.10,0.05' \
 bash scripts/run_ours_vico_multi_offset_smoke.sh
 ```
 
@@ -95,6 +96,7 @@ Our strategy: 16 subjects × eight fitted offsets × 31 prompts × one shared
 inference seed = 3,968 images.
 
 ```bash
+ALPHA_SCHEDULE='0.25,0.20,0.15,0.10,0.05' \
 bash scripts/run_ours_vico_multi_offset_fixed_seed.sh
 ```
 
