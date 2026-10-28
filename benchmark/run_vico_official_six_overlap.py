@@ -133,7 +133,8 @@ def main() -> None:
     parser.add_argument("--output", default="benchmark_outputs_vico_official_six_overlap")
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--load-step", type=int, default=399)
-    parser.add_argument("--num-samples", type=int, default=8)
+    parser.add_argument("--num-samples", type=int, default=4,
+                        help="number of inference seeds per prompt; default 4")
     parser.add_argument("--ddim-steps", type=int, default=50)
     parser.add_argument("--guidance-scale", type=float, default=7.5)
     parser.add_argument("--seed", type=int, default=0)

@@ -14,12 +14,12 @@ images are byte-identical to six objects in our current 16-object benchmark:
 
 The runner uses the official ViCo inference code unchanged. It uses the first
 matching reference image, the released checkpoint at `load_step=399`, the
-official `*` placeholder, 50 DDIM steps, CFG 7.5, and eight samples per
+official `*` placeholder, 50 DDIM steps, CFG 7.5, and four samples per
 prompt. The result layout is normalized to:
 
 ```text
 benchmark_outputs_vico_official_six_overlap/
-  barn/prompt_00/seed_000.jpg ... seed_007.jpg
+  barn/prompt_00/seed_000.jpg ... seed_003.jpg
   ...
 ```
 
@@ -45,7 +45,7 @@ Face authentication.
 
 ```bash
 cd /workspace/Modulation-Edit
-SUBJECTS=dog7 MAX_PROMPTS=5 NUM_SAMPLES=8 \
+SUBJECTS=dog7 MAX_PROMPTS=5 NUM_SAMPLES=4 \
 bash scripts/run_vico_official_six_overlap.sh
 ```
 
@@ -59,11 +59,11 @@ benchmark_outputs_vico_official_six_overlap/dog7/
 
 ```bash
 cd /workspace/Modulation-Edit
-SUBJECTS=all MAX_PROMPTS=0 NUM_SAMPLES=8 \
+SUBJECTS=all MAX_PROMPTS=0 NUM_SAMPLES=4 \
 bash scripts/run_vico_official_six_overlap.sh
 ```
 
-This creates `6 × 31 × 8 = 1,488` images. The same metrics evaluator used
+This creates `6 × 31 × 4 = 744` images. The same metrics evaluator used
 for our ARBooth-protocol comparison can be run afterward if desired, but keep
 the official ViCo images in their own report/output directory.
 

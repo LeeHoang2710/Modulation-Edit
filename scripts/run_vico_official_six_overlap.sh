@@ -7,7 +7,7 @@ cd "$ROOT"
 VICO_PYTHON="${VICO_PYTHON:-/venv/vico-modulation/bin/python}"
 SUBJECTS="${SUBJECTS:-all}"
 MAX_PROMPTS="${MAX_PROMPTS:-0}"
-NUM_SAMPLES="${NUM_SAMPLES:-8}"
+NUM_SAMPLES="${NUM_SAMPLES:-4}"
 LOAD_STEP="${LOAD_STEP:-399}"
 OUTPUT="${OUTPUT:-benchmark_outputs_vico_official_six_overlap}"
 
