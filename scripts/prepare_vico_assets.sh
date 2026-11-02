@@ -7,9 +7,20 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 ENV_NAME="${ENV_NAME:-vico-modulation}"
+VICO_PYTHON="${VICO_PYTHON:-/venv/vico-modulation/bin/python}"
 WEIGHTS_ROOT="${WEIGHTS_ROOT:-weights}"
 VICO_DIR="${VICO_DIR:-data/vico}"
-PYTHON_BIN=(conda run --no-capture-output -n "$ENV_NAME" python)
+if [[ -x "$VICO_PYTHON" ]]; then
+    PYTHON_BIN=("$VICO_PYTHON")
+elif command -v conda >/dev/null 2>&1; then
+    CONDA_BASE="$(conda info --base)"
+    # shellcheck disable=SC1091
+    source "$CONDA_BASE/etc/profile.d/conda.sh"
+    PYTHON_BIN=(conda run --no-capture-output -n "$ENV_NAME" python)
+else
+    echo "Missing $VICO_PYTHON or Conda environment $ENV_NAME" >&2
+    exit 1
+fi
 
 if [[ ! -d "$VICO_DIR" ]]; then
     temp_dir="$(mktemp -d)"
