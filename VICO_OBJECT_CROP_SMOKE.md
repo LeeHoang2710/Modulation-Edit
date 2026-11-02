@@ -1,6 +1,6 @@
 # Auto-crop one ViCo object and run a five-prompt smoke test
 
-This workflow runs **our Modulation-Edit method only**. Pass one of the 16 ViCo folder names, such as `alarm_clock`, `cat_statue`, or `elephant_statue`. It detects the object in every reference photo, saves tight crops, fits **one offset on scales 0–4**, generates one image for each of the first five official prompts, and reports DINO, CLIP-I, and CLIP-T. It does not train or run any of the five baseline models.
+This workflow runs **our Modulation-Edit method only**. Pass one of the 16 ViCo folder names, such as `alarm_clock`, `cat_statue`, or `elephant_statue`. It detects the object in every reference photo, saves tight crops, fits **one offset trajectory on scales 0–4 through 100 steps**, saves checkpoints at steps **50, 75, and 100**, then generates and scores the same five official prompts from each checkpoint. It does not train or run any of the five baseline models.
 
 ## 1. Start a Vast.ai instance
 
@@ -114,7 +114,7 @@ CROP_ONLY=1 CROP_LABEL='cat figurine' BOX_THRESHOLD=0.18 \
 
 The crop detector is automatic but cannot guarantee the correct instance, especially for toys, statues, or photos with multiple similar objects. Review the preview before using the result in a paper.
 
-## 6. Run the one-object, five-prompt smoke test
+## 6. Run the one-object, three-checkpoint smoke test
 
 Examples:
 
@@ -124,7 +124,7 @@ bash scripts/run_vico_object_crop_smoke.sh elephant_statue
 bash scripts/run_vico_object_crop_smoke.sh alarm_clock
 ```
 
-Each command re-crops that object's references and trains **one** new offset with 50 steps, batch size 5, gradient accumulation 1, learning rate `4e-3`, and no horizontal flip. The loss and learned offset cover scales `0–4` only. At inference it uses prompt cross-attention at all scales, early alpha schedule `0.25,0.20,0.15,0.10,0.05`, early CFG `1.2`, and `G_prompt` with late CFG `2.0`. It generates one image per prompt at inference seed 0.
+Each command re-crops that object's references and trains **one** new offset through 100 steps, saving its state at steps 50 and 75 plus the final state at step 100. The fit uses batch size 5, gradient accumulation 1, learning rate `4e-3`, and no horizontal flip. The loss and learned offset cover scales `0–4` only. Each checkpoint uses the same first five prompts and inference seed 0, making the three results comparable. Inference uses prompt cross-attention at all scales, early alpha schedule `0.25,0.20,0.15,0.10,0.05`, early CFG `1.2`, and `G_prompt` with late CFG `2.0`.
 
 You can vary the inference seed or alpha schedule:
 
@@ -141,11 +141,16 @@ Use a different `WORK_DIR`, `RESULTS`, and `REPORT_DIR` for each ablation so run
 For `cat_statue`, the default locations are:
 
 ```text
+benchmark_work/vico_crop_smoke/cat_statue/offsets/cat_statue/train_seed000/offset_it00050.pth
+benchmark_work/vico_crop_smoke/cat_statue/offsets/cat_statue/train_seed000/offset_it00075.pth
 benchmark_work/vico_crop_smoke/cat_statue/offsets/cat_statue/train_seed000/offset.pth
 benchmark_work/vico_crop_smoke/cat_statue/logs/
-benchmark_outputs/vico_crop_smoke/cat_statue/ours_cat_statue_auto_crop_smoke_late_prompt/cat_statue/prompt_00/seed_000.png
-benchmark_outputs/vico_crop_smoke/cat_statue/ours_cat_statue_auto_crop_smoke_late_prompt/cat_statue/prompt_01/seed_000.png
-benchmark_reports/vico_crop_smoke/cat_statue/summary.csv
+benchmark_outputs/vico_crop_smoke/cat_statue/step_050/ours_cat_statue_auto_crop_smoke_late_prompt/cat_statue/prompt_00/seed_000.png
+benchmark_outputs/vico_crop_smoke/cat_statue/step_075/ours_cat_statue_auto_crop_smoke_late_prompt/cat_statue/prompt_00/seed_000.png
+benchmark_outputs/vico_crop_smoke/cat_statue/step_100/ours_cat_statue_auto_crop_smoke_late_prompt/cat_statue/prompt_00/seed_000.png
+benchmark_reports/vico_crop_smoke/cat_statue/step_050/summary.csv
+benchmark_reports/vico_crop_smoke/cat_statue/step_075/summary.csv
+benchmark_reports/vico_crop_smoke/cat_statue/step_100/summary.csv
 ```
 
-The remaining images are in `prompt_02` through `prompt_04`. The evaluator scores them against the **original, uncropped** ViCo references, so the crop changes only our fitting inputs. Five prompts and one generated image per prompt make this a smoke test, not the 31-prompt benchmark result.
+Each step directory also contains `prompt_01` through `prompt_04`. The evaluator scores images against the **original, uncropped** ViCo references, so the crop changes only our fitting inputs. Five prompts and one generated image per prompt make each step a smoke test, not the 31-prompt benchmark result.

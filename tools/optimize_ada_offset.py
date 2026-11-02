@@ -228,7 +228,10 @@ def optimize(args, infinity, vae, device):
                 norms, what = offset.detach().flatten(1).norm(dim=-1).tolist(), '|offset| per scale'
             print(f'[it {it:4d}/{args.iters}] loss={it_loss:.4f} bit_acc={it_acc * 100:.2f}% '
                   f'{what}=[{", ".join(f"{n:.3f}" for n in norms)}] {time.time() - stt:.2f}s/it', flush=True)
-        if args.save_offset_every > 0 and args.save_offset and (it + 1) % args.save_offset_every == 0 and it + 1 < args.iters:
+        if args.save_offset and it + 1 < args.iters and (
+            (args.save_offset_every > 0 and (it + 1) % args.save_offset_every == 0)
+            or it + 1 in args.save_offset_at
+        ):
             stem, ext = osp.splitext(args.save_offset)
             save_offset(f'{stem}_it{it + 1:05d}{ext}', it + 1)
         if args.sample_every > 0 and args.save_file and (it + 1) % args.sample_every == 0 and it + 1 < args.iters:
@@ -324,6 +327,7 @@ if __name__ == '__main__':
     parser.add_argument('--sample_every', type=int, default=0, help='also sample every N steps to <save_file stem>_progress/ (0 = only at the end)')
     parser.add_argument('--save_offset', type=str, default='./ada_offset.pth')
     parser.add_argument('--save_offset_every', type=int, default=0, help='also save the offset every N steps to <save_offset stem>_itXXXXX.pth (0 = only at the end)')
+    parser.add_argument('--save_offset_at', type=str, default='', help='comma-separated exact intermediate steps to save, e.g. 50,75')
     parser.add_argument('--offset_path', type=str, default='', help='learned offset (infer mode)')
     parser.add_argument('--offset_scale', type=float, default=1.0, help='multiply the learned offset at inference')
     parser.add_argument('--prompt', type=str, default='', help="infer mode: prompt(s) separated by '|' the offset is added on top of (default: null text)")
@@ -333,6 +337,12 @@ if __name__ == '__main__':
     parser.add_argument('--top_p', type=float, default=0.97)
     parser.set_defaults(cfg='1', h_div_w_template=-1.)  # cfg=1: the null branch would equal the cond branch minus the offset
     args = parser.parse_args()
+    try:
+        args.save_offset_at = {int(value.strip()) for value in args.save_offset_at.split(',') if value.strip()}
+    except ValueError as error:
+        parser.error(f'--save_offset_at must contain integer steps: {error}')
+    if any(step <= 0 or step >= args.iters for step in args.save_offset_at):
+        parser.error('--save_offset_at steps must be between 1 and iters-1')
     args.cfg = float(args.cfg)
 
     device = torch.device('cuda')
