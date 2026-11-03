@@ -78,6 +78,23 @@ def encode_texts(infinity, null_len, prompt_cond):
 
 
 @torch.no_grad()
+def encode_texts_with_base(infinity, base_cond, prompt_cond):
+    """Use an encoded class caption as the base for prompt modulation and CA."""
+    base_kv, base_lens, _, _ = base_cond
+    prompt_kv, prompt_lens, _, _ = prompt_cond
+    lens = [base_lens[0], prompt_lens[0], base_lens[0]]
+    kv = torch.cat([base_kv.float(), prompt_kv.float(), base_kv.float()], 0)
+    cu = F.pad(torch.tensor(lens, device=kv.device, dtype=torch.int32).cumsum(0, dtype=torch.int32), (1, 0))
+    with torch.autocast('cuda', dtype=torch.bfloat16):
+        kv = infinity.text_norm(kv)
+        sos = infinity.text_proj_for_sos((kv, cu, max(lens)))
+        ca = infinity.text_proj_for_ca(kv)
+    with torch.autocast('cuda', enabled=False):
+        gss = infinity.shared_ada_lin(sos.float()).float().contiguous()
+    return sos, gss, list(ca.split(lens))
+
+
+@torch.no_grad()
 def modspace_infer(infinity, vae, texts, offset, rows, scale_schedule, offset_scales, delta_scales, cfg, tau, seed, args,
                    scale_coefficients=None, cfg_by_scale=None, conditional_gss_source_by_scale=None):
     """

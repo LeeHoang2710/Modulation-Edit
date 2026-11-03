@@ -49,6 +49,16 @@ def get_null_text_cond(infinity, B=1, null_len=1):
     return kv_compact, lens, cu_seqlens_k, null_len
 
 
+def repeat_text_cond(text_cond, batch_size):
+    """Repeat one encoded caption using the token count as its prefix sum."""
+    kv, lens, _, max_len = text_cond
+    if len(lens) != 1:
+        raise ValueError("Training prompt must encode exactly one caption")
+    length = lens[0]
+    cu = torch.arange(batch_size + 1, device=kv.device, dtype=torch.int32) * length
+    return kv.repeat(batch_size, 1), [length] * batch_size, cu, max_len
+
+
 def get_scale_schedule(args, h_div_w):
     if args.h_div_w_template > 0:
         h_div_w = args.h_div_w_template
@@ -181,6 +191,13 @@ def optimize(args, infinity, vae, device):
         apply_spatial_patchify=args.apply_spatial_patchify, debug_bsc=0))
 
     freeze_for_offset_training(infinity, args.grad_checkpointing)
+    train_cond = None
+    if args.train_prompt:
+        tokenizer, encoder = load_tokenizer(t5_path=args.text_encoder_ckpt)
+        with torch.no_grad():
+            train_cond = encode_prompt(tokenizer, encoder, args.train_prompt)
+        del encoder
+        print(f'[conditioning] optimization prompt={args.train_prompt!r}')
     num_offset_scales = len(scale_schedule) if args.offset_mode == 'per_scale' else 1
     offset = infinity.enable_ada_offset(cond_only=True, num_scales=num_offset_scales)  # after freezing, so it is the only trainable tensor
     optimizer = torch.optim.Adam([offset], lr=args.lr, weight_decay=args.weight_decay)
@@ -192,7 +209,8 @@ def optimize(args, infinity, vae, device):
         torch.save({
             'ada_offset': offset.detach().cpu(), 'offset_mode': args.offset_mode, 'null_len': args.null_len, 'pn': args.pn, 'h_div_w_template': h_div_w_template,
             'images': paths, 'loss_scales': loss_scales, 'batch_size': args.batch_size, 'grad_accum': args.grad_accum,
-            'iters': iters_done, 'lr': args.lr, 'seed': args.seed, 'hflip': args.hflip, 'log': list(log),
+            'iters': iters_done, 'lr': args.lr, 'seed': args.seed, 'hflip': args.hflip,
+            'train_prompt': args.train_prompt, 'log': list(log),
         }, path)
         print(f'[saved] offset (it {iters_done}) -> {path}')
 
@@ -210,7 +228,8 @@ def optimize(args, infinity, vae, device):
             x_BLC_wo_prefix = x_BLC_wo_prefix[:, :(fwd_seq_len - first_len), :]
             gt_BL = torch.cat(gt_ms_idx_Bl, dim=1)[:, :fwd_seq_len].contiguous().long()
 
-            text_cond_tuple = get_null_text_cond(infinity, B=len(idx), null_len=args.null_len)
+            text_cond_tuple = (repeat_text_cond(train_cond, len(idx)) if train_cond is not None
+                               else get_null_text_cond(infinity, B=len(idx), null_len=args.null_len))
             with torch.autocast('cuda', dtype=torch.bfloat16):
                 logits_BLV = infinity(text_cond_tuple, x_BLC_wo_prefix, scale_schedule=scale_schedule[:fwd_scales])
             loss, bit_acc = bitwise_loss(logits_BLV.float(), gt_BL, scale_schedule[:fwd_scales], loss_scales, args.label_smooth, args.reweight_loss_by_scale)
@@ -237,7 +256,7 @@ def optimize(args, infinity, vae, device):
         if args.sample_every > 0 and args.save_file and (it + 1) % args.sample_every == 0 and it + 1 < args.iters:
             stem, ext = osp.splitext(args.save_file)
             set_offset_infer_scales(infinity, args.offset_infer_scales, len(scale_schedule))
-            samples = [generate(infinity, vae, get_null_text_cond(infinity, 1, args.null_len), scale_schedule, args, args.seed + i)
+            samples = [generate(infinity, vae, train_cond if train_cond is not None else get_null_text_cond(infinity, 1, args.null_len), scale_schedule, args, args.seed + i)
                        for i in range(args.num_samples)]  # same seeds every time, so snapshots are comparable
             save_rows(f'{stem}_progress/it{it + 1:05d}{ext}', [samples, targets])
             set_train_mode(infinity, args.grad_checkpointing)  # generate() switched to eval()
@@ -247,7 +266,7 @@ def optimize(args, infinity, vae, device):
 
     if args.save_file:
         set_offset_infer_scales(infinity, args.offset_infer_scales, len(scale_schedule))
-        samples = [generate(infinity, vae, get_null_text_cond(infinity, 1, args.null_len), scale_schedule, args, args.seed + i)
+        samples = [generate(infinity, vae, train_cond if train_cond is not None else get_null_text_cond(infinity, 1, args.null_len), scale_schedule, args, args.seed + i)
                    for i in range(args.num_samples)]
         save_rows(args.save_file, [samples, targets])
 
@@ -331,6 +350,7 @@ if __name__ == '__main__':
     parser.add_argument('--offset_path', type=str, default='', help='learned offset (infer mode)')
     parser.add_argument('--offset_scale', type=float, default=1.0, help='multiply the learned offset at inference')
     parser.add_argument('--prompt', type=str, default='', help="infer mode: prompt(s) separated by '|' the offset is added on top of (default: null text)")
+    parser.add_argument('--train_prompt', type=str, default='', help='optimize mode: class conditioning, e.g. "a cat statue" (default: null text)')
     parser.add_argument('--num_samples', type=int, default=4, help='samples per prompt (seeds seed .. seed+n-1)')
     parser.add_argument('--save_file', type=str, default='./ada_offset_samples.jpg')
     parser.add_argument('--top_k', type=int, default=900)

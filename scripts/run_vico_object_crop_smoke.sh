@@ -26,9 +26,9 @@ CROP_ROOT="${CROP_ROOT:-data/vico_auto_cropped}"
 MANIFEST_ROOT="${MANIFEST_ROOT:-benchmark/manifests}"
 MANIFEST="$MANIFEST_ROOT/${SUBJECT}_auto_cropped.json"
 WORK_DIR="${WORK_DIR:-benchmark_work/vico_crop_smoke/${SUBJECT}}"
-RESULTS="${RESULTS:-benchmark_outputs/vico_crop_smoke/${SUBJECT}}"
-REPORT_DIR="${REPORT_DIR:-benchmark_reports/vico_crop_smoke/${SUBJECT}}"
-METHOD="${METHOD:-ours_${SUBJECT}_auto_crop_smoke}"
+RESULTS="${RESULTS:-benchmark_outputs/vico_crop_smoke_modifier_only/${SUBJECT}}"
+REPORT_DIR="${REPORT_DIR:-benchmark_reports/vico_crop_smoke_modifier_only/${SUBJECT}}"
+METHOD="${METHOD:-ours_${SUBJECT}_modifier_only_smoke}"
 BATCH_SIZE="${BATCH_SIZE:-5}"
 GRAD_ACCUM="${GRAD_ACCUM:-1}"
 LR="${LR:-4e-3}"
@@ -72,15 +72,20 @@ done
 
 OFFSET_DIR="$WORK_DIR/offsets/$SUBJECT/train_seed000"
 mkdir -p "$OFFSET_DIR" "$WORK_DIR/logs"
-echo "[fit] subject=$SUBJECT; one 100-step run; checkpoints 50, 75, 100; scales 0-4"
-"${PYTHON_BIN[@]}" tools/optimize_ada_offset.py \
-    --mode optimize --images "$CROP_ROOT/$SUBJECT" "${model_args[@]}" \
-    --seed 0 --hflip 0 --grad_checkpointing 1 --offset_mode per_scale \
-    --iters 100 --batch_size "$BATCH_SIZE" --grad_accum "$GRAD_ACCUM" --lr "$LR" \
-    --loss_scales 0-4 --offset_infer_scales 0-4 \
-    --num_samples 1 --sample_every 0 --save_offset_at 50,75 \
-    --save_offset "$OFFSET_DIR/offset.pth" --save_file "$OFFSET_DIR/reconstruction.jpg" \
-    2>&1 | tee "$WORK_DIR/logs/fit_100_steps.log"
+if [[ "${REUSE_OFFSETS:-1}" == "1" && -f "$OFFSET_DIR/offset_it00050.pth" \
+      && -f "$OFFSET_DIR/offset_it00075.pth" && -f "$OFFSET_DIR/offset.pth" ]]; then
+    echo "[reuse] using existing 50/75/100 checkpoints from $OFFSET_DIR"
+else
+    echo "[fit] subject=$SUBJECT; one 100-step run; checkpoints 50, 75, 100; scales 0-4"
+    "${PYTHON_BIN[@]}" tools/optimize_ada_offset.py \
+        --mode optimize --images "$CROP_ROOT/$SUBJECT" "${model_args[@]}" \
+        --seed 0 --hflip 0 --grad_checkpointing 1 --offset_mode per_scale \
+        --iters 100 --batch_size "$BATCH_SIZE" --grad_accum "$GRAD_ACCUM" --lr "$LR" \
+        --loss_scales 0-4 --offset_infer_scales 0-4 \
+        --num_samples 1 --sample_every 0 --save_offset_at 50,75 \
+        --save_offset "$OFFSET_DIR/offset.pth" --save_file "$OFFSET_DIR/reconstruction.jpg" \
+        2>&1 | tee "$WORK_DIR/logs/fit_100_steps.log"
+fi
 
 for step in 50 75 100; do
     printf -v step_tag '%03d' "$step"
@@ -94,13 +99,13 @@ for step in 50 75 100; do
     variant="$RESULTS/step_${step_tag}/${METHOD}_late_prompt"
     timing_file="$WORK_DIR/timings/step_${step_tag}.json"
     mkdir -p "$(dirname "$timing_file")" "$variant"
-    echo "[infer] step=$step; five prompts; seed=$INFER_SEED; alpha=$ALPHA_SCHEDULE"
+    echo "[infer] step=$step; five modifier-only prompts; seed=$INFER_SEED; alpha=$ALPHA_SCHEDULE"
     "${PYTHON_BIN[@]}" tools/infer_offset_vico_scale_schedule.py \
         --offset-path "$offset_path" --manifest "$MANIFEST" --subject "$SUBJECT" \
         --out-dir "$variant" "${model_args[@]}" \
         --text_encoder_ckpt weights/infinity/flan-t5-xl \
         --alpha-schedule "$ALPHA_SCHEDULE" --early-cfg "$EARLY_CFG" \
-        --late-cfg "$LATE_CFG" --late-gss prompt \
+        --late-cfg "$LATE_CFG" --late-gss prompt --prompt-mode modifier-only \
         --num-samples 1 --seed "$INFER_SEED" --max-prompts 5 \
         --timing-file "$timing_file" \
         2>&1 | tee "$WORK_DIR/logs/infer_step_${step_tag}.log"
@@ -114,7 +119,7 @@ for step in 50 75 100; do
         --manifest "$MANIFEST" --dataset "$DATASET" \
         --results "$variant" --model-name "${METHOD}_step_${step_tag}" \
         --subjects "$SUBJECT" --max-prompts 5 --expected-images-per-prompt 1 \
-        --selection mean8 --text-protocol arbooth-code \
+        --selection mean8 --text-protocol modifier-only \
         --report-dir "$REPORT_DIR/step_${step_tag}"
 done
 

@@ -1,6 +1,8 @@
 # Auto-crop one ViCo object and run a five-prompt smoke test
 
-This workflow runs **our Modulation-Edit method only**. Pass one of the 16 ViCo folder names, such as `alarm_clock`, `cat_statue`, or `elephant_statue`. It detects the object in every reference photo, saves tight crops, fits **one offset trajectory on scales 0–4 through 100 steps**, saves checkpoints at steps **50, 75, and 100**, then generates and scores the same five official prompts from each checkpoint. It does not train or run any of the five baseline models.
+This workflow runs **our Modulation-Edit method only**. Pass one of the 16 ViCo folder names, such as `alarm_clock`, `cat_statue`, or `elephant_statue`. It detects the object in every reference photo, saves tight crops, fits **one offset trajectory on scales 0–4 through 100 steps**, saves checkpoints at steps **50, 75, and 100**, then generates and scores the same five official prompt *modifiers* from each checkpoint. It does not train or run any of the five baseline models.
+
+The inference text contains **no object noun**. For `cat_statue`, `a {} in the snow` becomes `in the snow`, and `a red {}` becomes `red`. The learned offset still comes from the object's reference images. The detector still uses `cat statue` to find that object in those images; its detection phrase is separate from the generation prompt.
 
 ## 1. Start a Vast.ai instance
 
@@ -124,7 +126,13 @@ bash scripts/run_vico_object_crop_smoke.sh elephant_statue
 bash scripts/run_vico_object_crop_smoke.sh alarm_clock
 ```
 
-Each command re-crops that object's references and trains **one** new offset through 100 steps, saving its state at steps 50 and 75 plus the final state at step 100. The fit uses batch size 5, gradient accumulation 1, learning rate `4e-3`, and no horizontal flip. The loss and learned offset cover scales `0–4` only. Each checkpoint uses the same first five prompts and inference seed 0, making the three results comparable. Inference uses prompt cross-attention at all scales, early alpha schedule `0.25,0.20,0.15,0.10,0.05`, early CFG `1.2`, and `G_prompt` with late CFG `2.0`.
+Each command re-crops that object's references. If the same work directory already contains checkpoints 50, 75, and 100, the launcher reuses them by default so this prompt-only change can be compared using the **same learned offsets**. Otherwise it trains **one** new offset through 100 steps, saving its state at steps 50 and 75 plus the final state at step 100. The fit uses batch size 5, gradient accumulation 1, learning rate `4e-3`, and no horizontal flip. The loss and learned offset cover scales `0–4` only. Each checkpoint uses the same five modifiers and inference seed 0. Inference uses prompt cross-attention at all scales, early alpha schedule `0.25,0.20,0.15,0.10,0.05`, early CFG `1.2`, and `G_prompt` with late CFG `2.0`.
+
+Set `REUSE_OFFSETS=0` to fit again after changing the crops or training settings:
+
+```bash
+REUSE_OFFSETS=0 bash scripts/run_vico_object_crop_smoke.sh cat_statue
+```
 
 You can vary the inference seed or alpha schedule:
 
@@ -145,12 +153,12 @@ benchmark_work/vico_crop_smoke/cat_statue/offsets/cat_statue/train_seed000/offse
 benchmark_work/vico_crop_smoke/cat_statue/offsets/cat_statue/train_seed000/offset_it00075.pth
 benchmark_work/vico_crop_smoke/cat_statue/offsets/cat_statue/train_seed000/offset.pth
 benchmark_work/vico_crop_smoke/cat_statue/logs/
-benchmark_outputs/vico_crop_smoke/cat_statue/step_050/ours_cat_statue_auto_crop_smoke_late_prompt/cat_statue/prompt_00/seed_000.png
-benchmark_outputs/vico_crop_smoke/cat_statue/step_075/ours_cat_statue_auto_crop_smoke_late_prompt/cat_statue/prompt_00/seed_000.png
-benchmark_outputs/vico_crop_smoke/cat_statue/step_100/ours_cat_statue_auto_crop_smoke_late_prompt/cat_statue/prompt_00/seed_000.png
-benchmark_reports/vico_crop_smoke/cat_statue/step_050/summary.csv
-benchmark_reports/vico_crop_smoke/cat_statue/step_075/summary.csv
-benchmark_reports/vico_crop_smoke/cat_statue/step_100/summary.csv
+benchmark_outputs/vico_crop_smoke_modifier_only/cat_statue/step_050/ours_cat_statue_modifier_only_smoke_late_prompt/cat_statue/prompt_00/seed_000.png
+benchmark_outputs/vico_crop_smoke_modifier_only/cat_statue/step_075/ours_cat_statue_modifier_only_smoke_late_prompt/cat_statue/prompt_00/seed_000.png
+benchmark_outputs/vico_crop_smoke_modifier_only/cat_statue/step_100/ours_cat_statue_modifier_only_smoke_late_prompt/cat_statue/prompt_00/seed_000.png
+benchmark_reports/vico_crop_smoke_modifier_only/cat_statue/step_050/summary.csv
+benchmark_reports/vico_crop_smoke_modifier_only/cat_statue/step_075/summary.csv
+benchmark_reports/vico_crop_smoke_modifier_only/cat_statue/step_100/summary.csv
 ```
 
-Each step directory also contains `prompt_01` through `prompt_04`. The evaluator scores images against the **original, uncropped** ViCo references, so the crop changes only our fitting inputs. Five prompts and one generated image per prompt make each step a smoke test, not the 31-prompt benchmark result.
+Each step directory also contains `prompt_01` through `prompt_04` and a `prompt.txt` in each prompt folder containing the **actual modifier-only text**. The evaluator scores images against the **original, uncropped** ViCo references and uses the same modifier-only text for CLIP-T. CLIP-T from this experiment is therefore **not directly comparable** with the earlier ARBooth-code protocol, which sends the raw `{}` template to CLIP. Five prompts and one generated image per prompt make each step a smoke test, not the 31-prompt benchmark result.

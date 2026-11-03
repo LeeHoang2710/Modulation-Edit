@@ -24,7 +24,8 @@ sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
 import cv2
 import torch
 
-from tools.infer_offset_modspace import NULL, PROMPT, encode_texts, modspace_infer
+from tools.infer_offset_modspace import NULL, PROMPT, encode_texts, encode_texts_with_base, modspace_infer
+from benchmark.vico_prompt_format import render_prompt
 from tools.optimize_ada_offset import get_scale_schedule
 from tools.run_infinity import add_common_arguments, encode_prompt, load_tokenizer, load_transformer, load_visual_tokenizer
 
@@ -41,6 +42,12 @@ def main() -> None:
     parser.add_argument("--late-cfg", type=float, default=2.0)
     parser.add_argument("--late-gss", choices=["prompt", "null"], default="prompt",
                         help="shared AdaLN modulation at scales after the alpha schedule; ca_kv remains prompt in both variants")
+    parser.add_argument("--prompt-mode", choices=["class", "modifier-only"], default="class",
+                        help="class renders 'a cat statue in the snow'; modifier-only renders 'in the snow'")
+    parser.add_argument("--class-conditioned-base", action="store_true",
+                        help="use the checkpoint's training class prompt as modulation/CA base")
+    parser.add_argument("--subject-as-class", action="store_true",
+                        help="render prompts using the full subject name, e.g. alarm_clock -> alarm clock")
     # The benchmark runner uses one image from each independently fitted
     # offset. Additional samples are therefore opt-in, not a paper default.
     parser.add_argument("--num-samples", type=int, default=1)
@@ -64,7 +71,10 @@ def main() -> None:
     item = next((entry for entry in manifest["subjects"] if entry["subject"] == args.subject), None)
     if item is None:
         parser.error(f"Unknown ViCo subject: {args.subject}")
+    class_name = args.subject.replace("_", " ") if args.subject_as_class else item["class_name"]
     checkpoint = torch.load(args.offset_path, map_location="cpu")
+    if args.class_conditioned_base and not checkpoint.get("train_prompt"):
+        parser.error("--class-conditioned-base requires an offset trained with --train_prompt")
 
     vae = load_visual_tokenizer(args)
     vae.requires_grad_(False)
@@ -72,6 +82,10 @@ def main() -> None:
     infinity.requires_grad_(False)
     infinity.eval()
     tokenizer, encoder = load_tokenizer(t5_path=args.text_encoder_ckpt)
+    base_cond = (encode_prompt(tokenizer, encoder, checkpoint["train_prompt"])
+                 if args.class_conditioned_base else None)
+    if base_cond is not None and checkpoint["train_prompt"] != f"a {class_name}":
+        parser.error("Checkpoint training prompt does not match the manifest class")
     offset = checkpoint["ada_offset"].reshape(-1, 1, 6, infinity.C).cuda()
     null_len = checkpoint.get("null_len", 32)
     h_div_w = args.h_div_w_template if args.h_div_w_template > 0 else checkpoint.get("h_div_w_template", 1.0)
@@ -100,10 +114,11 @@ def main() -> None:
     generation_seconds = 0.0
     written = 0
     for index, template in enumerate(templates):
-        prompt = template.format(item["class_name"])
+        prompt = render_prompt(template, class_name, args.prompt_mode)
         if prompt not in prompt_cache:
             prompt_cache[prompt] = encode_prompt(tokenizer, encoder, prompt)
-        texts = encode_texts(infinity, null_len, prompt_cache[prompt])
+        texts = (encode_texts_with_base(infinity, base_cond, prompt_cache[prompt])
+                 if base_cond is not None else encode_texts(infinity, null_len, prompt_cache[prompt]))
         prompt_dir = out_root / f"prompt_{index:02d}"
         prompt_dir.mkdir(parents=True, exist_ok=True)
         (prompt_dir / "prompt.txt").write_text(prompt + "\n")

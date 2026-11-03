@@ -14,8 +14,9 @@ evaluator in this repository.  In particular it uses:
 The official ARBooth evaluator passes the *unrendered* template (for example
 ``a {} in the snow``) to CLIP-T.  ``--text-protocol arbooth-code`` is therefore
 the default for a strict code-level reproduction of their reported table.  The
-``rendered-class`` option is included only for an explicitly different,
-human-readable CLIP-T diagnostic.
+``rendered-class`` and ``modifier-only`` are explicitly different CLIP-T
+diagnostics. The latter uses the same object-free text as modifier-only
+generation and must not be compared as the ARBooth paper's CLIP-T protocol.
 """
 from __future__ import annotations
 
@@ -33,6 +34,7 @@ import numpy as np
 import torch
 from PIL import Image
 from torchvision import transforms
+from vico_prompt_format import render_prompt
 
 IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".webp"}
 METRIC_FIELDS = ("i_dino", "i_clip", "t_clip")
@@ -123,7 +125,9 @@ def prompt_text(template: str, class_name: str, protocol: str) -> str:
         # This is the exact string supplied to CLIPEvaluator in ARBooth's
         # tools/evaluate.py, despite the paper describing it as placeholder-free.
         return template
-    return template.format(class_name)
+    if protocol == "modifier-only":
+        return render_prompt(template, class_name, "modifier-only")
+    return render_prompt(template, class_name, "class")
 
 
 def selected_subjects(manifest: dict, requested: str) -> list[dict]:
@@ -171,7 +175,7 @@ def main() -> None:
     parser.add_argument("--selection", choices=["mean8", "best-dino"], default="mean8",
                         help="mean8 scores all outputs; best-dino retains the output with highest I-DINO per prompt")
     parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--text-protocol", choices=["arbooth-code", "rendered-class"], default="arbooth-code")
+    parser.add_argument("--text-protocol", choices=["arbooth-code", "rendered-class", "modifier-only"], default="arbooth-code")
     parser.add_argument("--clip-device", default="auto", help="auto, cpu, or cuda")
     parser.add_argument("--dino-device", default="cpu", help="cpu matches the released ARBooth evaluator; cuda is faster")
     parser.add_argument("--torch-hub-dir", default="weights/metrics/torchhub")
