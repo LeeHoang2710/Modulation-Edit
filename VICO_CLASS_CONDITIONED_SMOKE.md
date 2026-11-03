@@ -1,6 +1,14 @@
 # Class-conditioned ViCo offset experiment
 
-The optimizer uses the full subject name as its class caption, such as `a cat statue` or `a alarm clock`, for every reference image. It fits one shared per-scale offset on **scales 0–4**. Inference uses the ViCo prompt templates filled with the full subject name (`a cat statue ...`) for cross-attention and prompt modulation. The class caption is the base modulation and CFG partner; the learned offset is blended with the full prompt on scales 0–4. Scales 5–12 use full-prompt modulation.
+The optimizer uses the full subject name as its class caption, such as `a cat statue` or `a alarm clock`, for every reference image. It learns a separate offset \(D_s\) on each of scales **0–4**. It does not use null-text conditioning during this optimization.
+
+At inference, scales 0–4 use fixed \(\alpha=0.1\):
+
+\[
+G_s=0.9(G_{\text{class}}+D_s)+0.1G_{\text{prompt}}.
+\]
+
+Scales 5–12 use \(G_{\text{prompt}}\). The full prompt, such as `a cat statue on the beach`, is supplied to conditional cross-attention (`ca_kv`) at every scale. The CFG partner uses the class branch, so early guidance compares the blended full-prompt branch against \(G_{\text{class}}+D_s\).
 
 This changes the conditioning during fitting, so the new offset must be trained again. It is saved in a separate work directory.
 
@@ -26,4 +34,6 @@ Use another ViCo subject name as the argument. The script turns its underscores 
 MAX_PROMPTS=31 STEPS=100 bash scripts/run_vico_class_conditioned_smoke.sh cat_statue
 ```
 
-The checkpoint and reconstruction are under `benchmark_work/vico_class_conditioned/cat_statue/`. Generated images are under `benchmark_outputs/vico_class_conditioned/cat_statue/method/cat_statue/`. The `fit.log` and `infer.log` files record both stages.
+The checkpoint and reconstruction are under `benchmark_work/vico_class_conditioned/cat_statue/`. Generated images are under `benchmark_outputs/vico_class_conditioned_alpha01/cat_statue/method/cat_statue/`. The `fit.log` and `infer.log` files record both stages.
+
+The launcher fixes alpha to `0.1` and injects offsets on all scales 0–4. You can still change `MAX_PROMPTS`, `STEPS`, `BATCH_SIZE`, `GRAD_ACCUM`, `LR`, or `INFER_SEED` through environment variables.

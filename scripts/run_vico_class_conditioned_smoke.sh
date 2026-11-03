@@ -9,7 +9,8 @@ MANIFEST="${MANIFEST:-benchmark/manifests/vico.json}"
 DATASET="${DATASET:-data/vico}"
 MAX_PROMPTS="${MAX_PROMPTS:-5}"
 STEPS="${STEPS:-50}"
-OUTPUT="${OUTPUT:-benchmark_outputs/vico_class_conditioned/$SUBJECT}"
+ALPHA_SCHEDULE="0.1,0.1,0.1,0.1,0.1"
+OUTPUT="${OUTPUT:-benchmark_outputs/vico_class_conditioned_alpha01/$SUBJECT}"
 WORK="${WORK:-benchmark_work/vico_class_conditioned/$SUBJECT}"
 REPORT="${REPORT:-benchmark_reports/vico_class_conditioned/$SUBJECT}"
 [[ -f "$MANIFEST" && -d "$DATASET/$SUBJECT" ]] || { echo "Prepare ViCo data/manifest first" >&2; exit 1; }
@@ -34,10 +35,11 @@ echo "[fit] $SUBJECT prompt='$TRAIN_PROMPT' scales=0-4"
   --save_offset "$OFFSET" --save_file "$WORK/reconstruction.jpg" \
   2>&1 | tee "$WORK/fit.log"
 echo "[infer] full class prompts, ca_kv and class-base modulation"
+echo "[infer] G_s=0.9*(G_class+D_s)+0.1*G_prompt on scales 0-4; G_prompt on scales 5-12"
 "$PYTHON_BIN" tools/infer_offset_vico_scale_schedule.py --offset-path "$OFFSET" \
   --manifest "$MANIFEST" --subject "$SUBJECT" --out-dir "$OUTPUT/method" \
   "${MODEL[@]}" --class-conditioned-base --subject-as-class --prompt-mode class \
-  --alpha-schedule "${ALPHA_SCHEDULE:-0.25,0.20,0.15,0.10,0.05}" \
+  --offset-scales 0-4 --alpha-schedule "$ALPHA_SCHEDULE" \
   --early-cfg "${EARLY_CFG:-1.2}" --late-cfg "${LATE_CFG:-2.0}" \
   --late-gss prompt --num-samples 1 --seed "${INFER_SEED:-0}" \
   --max-prompts "$MAX_PROMPTS" --timing-file "$WORK/timing.json" \

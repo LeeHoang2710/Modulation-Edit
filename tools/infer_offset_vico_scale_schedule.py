@@ -2,13 +2,16 @@
 """Generate ViCo prompts with the current scale-scheduled modulation method.
 
 For the default five learned early scales:
-  s=0..4: (1-a_s) * (G_null + D_s) + a_s * G_prompt,
-           a=[.25,.20,.15,.10,.05], CFG=1.2
+  s=0..4: (1-a_s) * (G_base + D_s) + a_s * G_prompt,
+           a=[.1,.1,.1,.1,.1], CFG=1.2
   s=5..12: G_prompt (or the null-text ablation G_null), CFG=2.0
 
-The conditional cross-attention ``ca_kv`` always uses the prompt. The CFG
-partner uses null ``ca_kv`` and its own null modulation; this makes CFG act on
-the prompt direction rather than amplifying the learned subject offset.
+With --class-conditioned-base, G_base is the class prompt saved in the
+checkpoint (for example, "a cat statue"). Otherwise G_base is G_null.
+
+Conditional cross-attention ``ca_kv`` always uses the full prompt. The CFG
+partner uses the base caption for both ``ca_kv`` and modulation: class text in
+class-conditioned mode, or null text in the legacy mode.
 """
 from __future__ import annotations
 
@@ -26,7 +29,7 @@ import torch
 
 from tools.infer_offset_modspace import NULL, PROMPT, encode_texts, encode_texts_with_base, modspace_infer
 from benchmark.vico_prompt_format import render_prompt
-from tools.optimize_ada_offset import get_scale_schedule
+from tools.optimize_ada_offset import get_scale_schedule, parse_scales
 from tools.run_infinity import add_common_arguments, encode_prompt, load_tokenizer, load_transformer, load_visual_tokenizer
 
 
@@ -37,11 +40,13 @@ def main() -> None:
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--subject", required=True)
     parser.add_argument("--out-dir", required=True)
-    parser.add_argument("--alpha-schedule", default="0.25,0.20,0.15,0.10,0.05")
+    parser.add_argument("--alpha-schedule", default="0.1,0.1,0.1,0.1,0.1")
     parser.add_argument("--early-cfg", type=float, default=1.2)
     parser.add_argument("--late-cfg", type=float, default=2.0)
     parser.add_argument("--late-gss", choices=["prompt", "null"], default="prompt",
                         help="shared AdaLN modulation at scales after the alpha schedule; ca_kv remains prompt in both variants")
+    parser.add_argument("--offset-scales", default="0-4",
+                        help="scales where the learned offset is injected; supports '0-4' or '0,2-4'")
     parser.add_argument("--prompt-mode", choices=["class", "modifier-only"], default="class",
                         help="class renders 'a cat statue in the snow'; modifier-only renders 'in the snow'")
     parser.add_argument("--class-conditioned-base", action="store_true",
@@ -56,6 +61,8 @@ def main() -> None:
                         help="first normalized output seed index; lets independently trained offsets share one subject folder")
     parser.add_argument("--max-prompts", type=int, default=0,
                         help="0 means all 31 official templates; use 5 for a smoke test")
+    parser.add_argument("--prepend-class-prompt", action="store_true",
+                        help='generate "a <class name>" before the selected benchmark templates')
     parser.add_argument("--timing-file", default="", help="optional JSON path for pure generation timing")
     parser.add_argument("--top-k", type=int, default=900)
     parser.add_argument("--top-p", type=float, default=0.97)
@@ -66,6 +73,8 @@ def main() -> None:
     alpha = tuple(float(value) for value in args.alpha_schedule.split(",") if value.strip())
     if not alpha or any(value < 0 or value > 1 for value in alpha):
         parser.error("--alpha-schedule must be comma-separated values in [0, 1]")
+    if args.class_conditioned_base and alpha != (0.1,) * 5:
+        parser.error("--class-conditioned-base requires alpha 0.1 on exactly five scales")
 
     manifest = json.loads(Path(args.manifest).read_text())
     item = next((entry for entry in manifest["subjects"] if entry["subject"] == args.subject), None)
@@ -95,15 +104,22 @@ def main() -> None:
         parser.error(f"alpha schedule has {early_count} scales but generation has only {len(scale_schedule)}")
     learned = set(checkpoint.get("loss_scales", range(offset.shape[0])))
     early_scales = set(range(early_count))
+    offset_scales = set(parse_scales(args.offset_scales, len(scale_schedule)))
+    if args.class_conditioned_base and (learned != set(range(5)) or offset_scales != set(range(5))):
+        parser.error("Class-conditioned inference requires offsets trained and injected on exactly scales 0-4")
+    if not offset_scales.issubset(learned):
+        parser.error(f"Offset does not contain all requested injection scales: {sorted(offset_scales - learned)}")
     if not early_scales.issubset(learned):
         parser.error(f"Offset does not contain all required learned early scales: {sorted(early_scales - learned)}")
     if offset.shape[0] != 1 and offset.shape[0] < early_count:
         parser.error(f"Offset contains {offset.shape[0]} scale slots; need at least {early_count}")
 
+    # modspace_infer adds (1-a)D_s + a(G_prompt-G_base) to G_base:
+    # G_s = (1-a)(G_base+D_s) + a*G_prompt.
     coefficients = {scale: (1.0 - value, value) for scale, value in enumerate(alpha)}
     cfg_by_scale = [args.early_cfg] * early_count + [args.late_cfg] * (len(scale_schedule) - early_count)
-    # The CFG partner always remains G_null. This ablation changes only the
-    # conditional shared AdaLN modulation after the learned early scales.
+    # The CFG partner remains the base branch. In class-conditioned mode,
+    # NULL indexes the encoded class prompt instead of the model null text.
     gss_sources = ({scale: PROMPT for scale in range(early_count, len(scale_schedule))}
                    if args.late_gss == "prompt" else {})
     rows = [(NULL, PROMPT, True, 0.0), (NULL, NULL, True, 0.0)]
@@ -111,10 +127,14 @@ def main() -> None:
     out_root.mkdir(parents=True, exist_ok=True)
     prompt_cache = {}
     templates = item["prompt_templates"][:args.max_prompts or None]
+    prompts = [render_prompt(template, class_name, args.prompt_mode) for template in templates]
+    if args.prepend_class_prompt:
+        if args.prompt_mode != "class":
+            parser.error("--prepend-class-prompt requires --prompt-mode class")
+        prompts.insert(0, f"a {class_name}")
     generation_seconds = 0.0
     written = 0
-    for index, template in enumerate(templates):
-        prompt = render_prompt(template, class_name, args.prompt_mode)
+    for index, prompt in enumerate(prompts):
         if prompt not in prompt_cache:
             prompt_cache[prompt] = encode_prompt(tokenizer, encoder, prompt)
         texts = (encode_texts_with_base(infinity, base_cond, prompt_cache[prompt])
@@ -125,7 +145,7 @@ def main() -> None:
         for sample in range(args.num_samples):
             started = time.perf_counter()
             image = modspace_infer(infinity, vae, texts, offset, rows, scale_schedule,
-                                   early_scales, early_scales, args.early_cfg, 1.0,
+                                   offset_scales, early_scales, args.early_cfg, 1.0,
                                    args.seed + sample, args, scale_coefficients=coefficients,
                                    cfg_by_scale=cfg_by_scale,
                                    conditional_gss_source_by_scale=gss_sources)
@@ -142,9 +162,14 @@ def main() -> None:
         timing_path.parent.mkdir(parents=True, exist_ok=True)
         timing_path.write_text(json.dumps({
             "subject": args.subject, "late_gss": args.late_gss,
+            "class_conditioned_base": args.class_conditioned_base,
+            "train_prompt": checkpoint.get("train_prompt", ""),
+            "alpha_schedule": alpha, "offset_scales": sorted(offset_scales),
             "images": written, "generation_seconds": generation_seconds,
             "generation_seconds_per_image": generation_seconds / max(written, 1),
-            "prompts": len(templates),
+            "prompts": len(prompts),
+            "benchmark_prompts": len(templates),
+            "prepended_class_prompt": args.prepend_class_prompt,
         }, indent=2) + "\n")
 
 
