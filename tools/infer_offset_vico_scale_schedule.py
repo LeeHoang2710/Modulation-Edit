@@ -41,6 +41,8 @@ def main() -> None:
     parser.add_argument("--subject", required=True)
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--alpha-schedule", default="0.1,0.1,0.1,0.1,0.1")
+    parser.add_argument("--early-composition", choices=["interpolate", "preserve-offset"], default="interpolate",
+                        help="interpolate weights both base and offset by 1-alpha; preserve-offset keeps D_s at weight 1")
     parser.add_argument("--early-cfg", type=float, default=1.2)
     parser.add_argument("--late-cfg", type=float, default=2.0)
     parser.add_argument("--late-gss", choices=["prompt", "null"], default="prompt",
@@ -91,9 +93,9 @@ def main() -> None:
     infinity.requires_grad_(False)
     infinity.eval()
     tokenizer, encoder = load_tokenizer(t5_path=args.text_encoder_ckpt)
-    base_cond = (encode_prompt(tokenizer, encoder, checkpoint["train_prompt"])
-                 if args.class_conditioned_base else None)
-    if base_cond is not None and checkpoint["train_prompt"] != f"a {class_name}":
+    base_prompt = checkpoint["train_prompt"] if args.class_conditioned_base else ""
+    base_cond = encode_prompt(tokenizer, encoder, base_prompt) if base_prompt else None
+    if args.class_conditioned_base and checkpoint["train_prompt"] != f"a {class_name}":
         parser.error("Checkpoint training prompt does not match the manifest class")
     offset = checkpoint["ada_offset"].reshape(-1, 1, 6, infinity.C).cuda()
     null_len = checkpoint.get("null_len", 32)
@@ -106,7 +108,7 @@ def main() -> None:
     early_scales = set(range(early_count))
     offset_scales = set(parse_scales(args.offset_scales, len(scale_schedule)))
     if args.class_conditioned_base and (learned != set(range(5)) or offset_scales != set(range(5))):
-        parser.error("Class-conditioned inference requires offsets trained and injected on exactly scales 0-4")
+        parser.error("Class-base inference requires offsets trained and injected on exactly scales 0-4")
     if not offset_scales.issubset(learned):
         parser.error(f"Offset does not contain all requested injection scales: {sorted(offset_scales - learned)}")
     if not early_scales.issubset(learned):
@@ -114,9 +116,14 @@ def main() -> None:
     if offset.shape[0] != 1 and offset.shape[0] < early_count:
         parser.error(f"Offset contains {offset.shape[0]} scale slots; need at least {early_count}")
 
-    # modspace_infer adds (1-a)D_s + a(G_prompt-G_base) to G_base:
-    # G_s = (1-a)(G_base+D_s) + a*G_prompt.
-    coefficients = {scale: (1.0 - value, value) for scale, value in enumerate(alpha)}
+    # modspace_infer starts at G_base and adds w_D*D_s plus
+    # a*(G_prompt-G_base). The two supported formulations are:
+    #   interpolate:    (1-a)(G_base+D_s) + a*G_prompt
+    #   preserve-offset: (1-a)G_base + D_s + a*G_prompt
+    coefficients = {
+        scale: ((1.0 - value) if args.early_composition == "interpolate" else 1.0, value)
+        for scale, value in enumerate(alpha)
+    }
     cfg_by_scale = [args.early_cfg] * early_count + [args.late_cfg] * (len(scale_schedule) - early_count)
     # The CFG partner remains the base branch. In class-conditioned mode,
     # NULL indexes the encoded class prompt instead of the model null text.
@@ -163,8 +170,10 @@ def main() -> None:
         timing_path.write_text(json.dumps({
             "subject": args.subject, "late_gss": args.late_gss,
             "class_conditioned_base": args.class_conditioned_base,
+            "base_prompt": base_prompt,
             "train_prompt": checkpoint.get("train_prompt", ""),
-            "alpha_schedule": alpha, "offset_scales": sorted(offset_scales),
+            "alpha_schedule": alpha, "early_composition": args.early_composition,
+            "offset_scales": sorted(offset_scales),
             "images": written, "generation_seconds": generation_seconds,
             "generation_seconds_per_image": generation_seconds / max(written, 1),
             "prompts": len(prompts),
