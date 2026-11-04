@@ -1,9 +1,16 @@
 # sourced by ablation/*.sh; every value can be overridden from the environment
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 PYTHON=${PYTHON:-.venv/bin/python}                                   # Infinity env (torch 2.5.1)
-EVAL_PYTHON=${EVAL_PYTHON:-/root/miniconda3/envs/csd-var/bin/python} # env with ARBooth booth_evaluation deps
+if [ -z "${EVAL_PYTHON:-}" ]; then
+    if command -v conda >/dev/null 2>&1; then
+        EVAL_PYTHON="$(conda info --base)/envs/csd-var/bin/python"
+    else
+        EVAL_PYTHON=/root/miniconda3/envs/csd-var/bin/python
+    fi
+fi
 VICO_DIR=${VICO_DIR:-/workspace/CSD-VAR/benchmark_data/vico_csd}
 ARBOOTH_ROOT=${ARBOOTH_ROOT:-/workspace/ARBooth}
+CSD_ROOT=${CSD_ROOT:-/workspace/CSD-VAR}
 ROOT=${ROOT:-output/ablation_vico}
 NUM_SAMPLES=${NUM_SAMPLES:-8}     # ViCo protocol: 8 images per prompt
 NUM_PROMPTS=${NUM_PROMPTS:-0}     # 0 = all 31 prompts

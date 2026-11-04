@@ -1,6 +1,6 @@
 #!/bin/bash
-# ARBooth / DreamMatcher metrics (DINO, CLIP-I, CLIP-T, CLIP-T-cls, DIV) of every variant folder of one ablation part,
-# with CSD-VAR/evaluate_personalization.py (same code as the CSD-VAR baseline), then one summary table.
+# ARBooth / DreamMatcher metrics (DINO, CLIP-I, CLIP-T, CLIP-T-cls, DIV, plus PRES/CSD metrics when emitted) of every variant folder of one ablation part,
+# with the repository's ARBooth + CSD-VAR evaluator, then one summary table.
 # usage: bash ablation/eval_vico.sh <part_dir>      e.g. output/ablation_vico/02_blend
 set -uo pipefail
 source "$(dirname "$0")/_env.sh"
@@ -20,8 +20,9 @@ for vdir in "$part"/*/; do
         echo "== skip eval $(basename "$vdir"): metrics.csv up to date"; continue
     fi
     echo "== eval $(basename "$vdir")"
-    $EVAL_PYTHON /workspace/CSD-VAR/evaluate_personalization.py --result_dir "$vdir" --data_dir "$data_dir" \
-        --arbooth_root "$ARBOOTH_ROOT" > "$vdir/eval.log" 2>&1 || { echo "   FAILED, see $vdir/eval.log"; tail -n 5 "$vdir/eval.log"; }
+    $EVAL_PYTHON ablation/evaluate_personalization.py --result_dir "$vdir" --data_dir "$data_dir" \
+        --arbooth_root "$ARBOOTH_ROOT" --csd_root "$CSD_ROOT" > "$vdir/eval.log" 2>&1 \
+        || { echo "   FAILED, see $vdir/eval.log"; tail -n 5 "$vdir/eval.log"; }
     grep '^\[overall\]' "$vdir/eval.log" || true
 done
 $PYTHON ablation/summarize.py "$part"

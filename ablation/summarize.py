@@ -5,7 +5,7 @@ import os
 import os.path as osp
 import sys
 
-METRICS = ['dino', 'clip_i', 'clip_t', 'clip_t_cls', 'div']
+METRICS = ['dino', 'clip_i', 'clip_t', 'clip_t_cls', 'div', 'pres', 'csd_content', 'csd_style']
 
 part = sys.argv[1]
 rows = []
@@ -22,7 +22,7 @@ for name in sorted(os.listdir(part)):
                 n_sub = r['subject'].split('(')[1].split()[0]
                 rows.append(dict(variant=name, group=group, subjects=n_sub, alpha=v['alpha'], blend=v['blend'], ca=v['ca'],
                                  offset=v['offset'], offset_scales=v['offset_scales'], cfg=v['cfg'],
-                                 **{m: f'{float(r[m]):.4f}' if r[m] else '' for m in METRICS}))
+                                 **{m: f'{float(r[m]):.4f}' if r.get(m, '') else '' for m in METRICS}))
 if not rows:
     sys.exit(f'no metrics.csv under {part}')
 with open(osp.join(part, 'summary.csv'), 'w', newline='') as f:
