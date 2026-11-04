@@ -71,13 +71,22 @@ for filename in ("infinity_2b_reg.pth", "infinity_vae_d32reg.pth"):
     )
 
 text_dir = weights_dir / "flan-t5-xl"
-if (text_dir / "config.json").exists():
+required_text_files = (
+    "config.json",
+    "tokenizer_config.json",
+    "spiece.model",
+    "model.safetensors.index.json",
+)
+text_complete = all((text_dir / name).is_file() for name in required_text_files)
+text_complete = text_complete and any(text_dir.glob("*.safetensors"))
+if text_complete:
     print(f"Already present: {text_dir}")
 else:
-    print("Downloading google/flan-t5-xl")
+    print("Downloading or repairing google/flan-t5-xl")
     snapshot_download(
         repo_id="google/flan-t5-xl",
         local_dir=str(text_dir),
+        allow_patterns=["*.json", "*.safetensors", "spiece.model"],
         token=token,
     )
 PY
@@ -101,6 +110,19 @@ check_file() {
 check_file "${WEIGHTS_DIR}/infinity_2b_reg.pth" $((8 * 1024 * 1024 * 1024))
 check_file "${WEIGHTS_DIR}/infinity_vae_d32reg.pth" $((1024 * 1024 * 1024))
 check_file "${WEIGHTS_DIR}/flan-t5-xl/config.json" 100
+check_file "${WEIGHTS_DIR}/flan-t5-xl/tokenizer_config.json" 100
+check_file "${WEIGHTS_DIR}/flan-t5-xl/spiece.model" 100000
+check_file "${WEIGHTS_DIR}/flan-t5-xl/model.safetensors.index.json" 100
+
+shopt -s nullglob
+t5_shards=("${WEIGHTS_DIR}/flan-t5-xl"/*.safetensors)
+if (( ${#t5_shards[@]} == 0 )); then
+    echo "Missing FLAN-T5 safetensors model shards under ${WEIGHTS_DIR}/flan-t5-xl" >&2
+    exit 1
+fi
+for shard in "${t5_shards[@]}"; do
+    check_file "${shard}" $((10 * 1024 * 1024))
+done
 
 echo
 echo "Weights are ready:"

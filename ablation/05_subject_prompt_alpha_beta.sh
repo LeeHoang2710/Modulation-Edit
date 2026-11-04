@@ -24,6 +24,27 @@ if ! "$PYTHON" -c 'import torch, cv2, tqdm, flash_attn' >/dev/null 2>&1; then
   exit 1
 fi
 
+required_weights=(
+  weights/infinity_2b_reg.pth
+  weights/infinity_vae_d32reg.pth
+  weights/flan-t5-xl/config.json
+  weights/flan-t5-xl/tokenizer_config.json
+  weights/flan-t5-xl/spiece.model
+  weights/flan-t5-xl/model.safetensors.index.json
+)
+for weight in "${required_weights[@]}"; do
+  if [[ ! -f "$weight" ]]; then
+    echo "Missing or incomplete local weight: $weight" >&2
+    echo "Run: USE_ACTIVE_PYTHON=1 PYTHON_BIN=.venv/bin/python bash scripts/download_vastai_weights.sh" >&2
+    exit 1
+  fi
+done
+if ! compgen -G 'weights/flan-t5-xl/*.safetensors' >/dev/null; then
+  echo "Missing FLAN-T5 safetensors shards under weights/flan-t5-xl" >&2
+  echo "Run: USE_ACTIVE_PYTHON=1 PYTHON_BIN=.venv/bin/python bash scripts/download_vastai_weights.sh" >&2
+  exit 1
+fi
+
 STAGE="${1:-auto}"
 SWEEP="${SWEEP:-beta}"
 ALPHAS="${ALPHAS:-0,0.1,0.2,0.3,0.4}"

@@ -43,26 +43,24 @@ git switch friend_module_space_prompt_offset_sync
 git pull --ff-only origin friend_module_space_prompt_offset_sync
 ```
 
-Prepare the Infinity environment, Infinity weights, ViCo benchmark, ARBooth evaluator, and CSD-VAR metrics:
+Prepare and validate the Infinity environment, all local weights, the complete
+16-subject ViCo benchmark, ARBooth evaluator, and CSD-VAR metrics with one
+command:
 
 ```bash
 cd /workspace/Modulation-Edit
-
-bash scripts/setup_venv.sh
-
-# This must succeed before running an experiment. It verifies the exact
-# interpreter used by every ablation launcher.
-.venv/bin/python -c 'import torch, cv2, tqdm, flash_attn; print(torch.__version__, cv2.__version__)'
-
-USE_ACTIVE_PYTHON=1 PYTHON_BIN=.venv/bin/python \
-  bash scripts/download_vastai_weights.sh
-
-bash scripts/prepare_vico_ablation_assets.sh
+bash scripts/prepare_vico_beta_alpha.sh
 ```
 
-Do not continue if `setup_venv.sh` or the import check fails. If `.venv`
-already exists but is incomplete, rerunning `setup_venv.sh` repairs it; it does
-not require deleting the environment.
+Do not run an experiment unless the script ends with:
+
+```text
+[ready] The beta-then-alpha ViCo pipeline is fully prepared.
+```
+
+The preparation command is safe to rerun. It repairs an incomplete `.venv`, an
+interrupted FLAN-T5 download, missing ViCo data, or an incomplete evaluator
+environment without deleting completed experiment outputs.
 
 The asset script creates:
 
