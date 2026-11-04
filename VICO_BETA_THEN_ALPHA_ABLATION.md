@@ -1,6 +1,6 @@
-# ViCo ablation: select beta first, then sweep alpha
+# ViCo automatic beta-then-alpha ablation
 
-This is the recommended two-stage ablation for
+The experiment uses
 
 \[
 G_s=
@@ -12,13 +12,20 @@ G_{\text{subj}},
 \end{cases}
 \]
 
-The complete prompt remains in conditional `ca_kv` at every scale and CFG remains `1.5`. Run the beta sweep first with `alpha=0`, select the best beta from the metrics, and then keep that beta fixed for the alpha sweep.
+The complete modification prompt remains in conditional `ca_kv` at every scale and CFG remains `1.5`.
 
-## 1. Clone and prepare Vast.ai
+The launcher now performs the complete protocol automatically:
 
-Use a CUDA 12 development image with Python 3.10 and at least 40 GB of GPU memory. The commands below assume the persistent disk is mounted at `/workspace`.
+1. prepare or reuse the subject-conditioned BSC offsets;
+2. run the beta sweep with `alpha=0`;
+3. evaluate every beta;
+4. select the best beta automatically;
+5. run the alpha sweep with that beta fixed;
+6. evaluate every alpha.
 
-### 1.1 Clone this branch
+## 1. Setup Vast.ai
+
+Clone or update the branch:
 
 ```bash
 cd /workspace
@@ -27,7 +34,7 @@ git clone --branch friend_module_space_prompt_offset_sync \
 cd Modulation-Edit
 ```
 
-If the repository already exists:
+For an existing clone:
 
 ```bash
 cd /workspace/Modulation-Edit
@@ -36,9 +43,7 @@ git switch friend_module_space_prompt_offset_sync
 git pull --ff-only origin friend_module_space_prompt_offset_sync
 ```
 
-### 1.2 Prepare the environment, weights and ViCo assets
-
-From the repository root, run:
+Prepare the Infinity environment, Infinity weights, ViCo benchmark, ARBooth evaluator, and CSD-VAR metrics:
 
 ```bash
 cd /workspace/Modulation-Edit
@@ -51,9 +56,21 @@ USE_ACTIVE_PYTHON=1 PYTHON_BIN=.venv/bin/python \
 bash scripts/prepare_vico_ablation_assets.sh
 ```
 
-The third command clones ARBooth and CSD-VAR, pulls the official 16-subject ViCo references and prompts from ARBooth, creates `/workspace/CSD-VAR/benchmark_data/vico_csd`, installs the `csd-var` evaluator environment, and downloads the CSD-VAR metric checkpoint.
+The asset script creates:
 
-The offset stage uses the friend's selected setup:
+```text
+/workspace/ARBooth
+/workspace/CSD-VAR
+/workspace/CSD-VAR/benchmark_data/vico_csd
+/root/miniconda3/envs/csd-var
+weights/infinity_2b_reg.pth
+weights/infinity_vae_d32reg.pth
+weights/flan-t5-xl
+```
+
+## 2. Offset optimization configuration
+
+One offset is learned per subject and reused by every beta and alpha variant:
 
 ```yaml
 conditioning: subject-name text
@@ -62,16 +79,17 @@ steps: 200
 batch size: 2
 gradient accumulation: 2
 learning rate: 5e-3
-BSC: layers 13, strength 0.3
+BSC layers: 13
+BSC strength: 0.3
 horizontal flip: disabled
 offset initialization: zero
 ```
 
-Only one offset is prepared per subject and it is reused by every beta and alpha variant.
+Inference applies the learned offset only at scales `0,2,3,4`.
 
-## 2. Smoke-test the beta sweep
+## 3. Automatic smoke test
 
-Run one subject, five prompts, one sample per prompt:
+Run one subject, five prompts, and one image per prompt:
 
 ```bash
 cd /workspace/Modulation-Edit
@@ -79,111 +97,134 @@ cd /workspace/Modulation-Edit
 SUBJECTS=black_cat \
 NUM_PROMPTS=5 \
 NUM_SAMPLES=1 \
-SWEEP=beta \
-FIXED_ALPHA=0 \
-bash ablation/05_subject_prompt_alpha_beta.sh all
+bash ablation/05_subject_prompt_alpha_beta.sh
 ```
 
-This tests:
+The smoke test produces:
 
 ```text
-beta = 0.6, 0.7, 0.8, 0.9, 1.0
+beta stage:  5 beta values  × 5 prompts × 1 image = 25 images
+alpha stage: 5 alpha values × 5 prompts × 1 image = 25 images
+total: 50 images
+```
+
+## 4. Automatic full experiment
+
+Run all 16 subjects, 31 prompts, and 8 images per prompt:
+
+```bash
+cd /workspace/Modulation-Edit
+bash ablation/05_subject_prompt_alpha_beta.sh
+```
+
+The full run produces:
+
+```text
+beta stage:  5 × 16 × 31 × 8 = 19,840 images
+alpha stage: 5 × 16 × 31 × 8 = 19,840 images
+total: 39,680 images
+```
+
+The terminal displays only these two image-level progress bars:
+
+```text
+1/2 beta sweep:  ... / 19,840 img
+2/2 alpha sweep: ... / 19,840 img
+```
+
+Model loading, image-processing messages, warnings, evaluation output, and optimizer status are written to log files instead of the terminal.
+
+## 5. Automatic beta selection
+
+The default criterion is the highest overall DINO score because beta directly controls subject-identity offset strength. Ties are resolved using:
+
+```text
+CLIP-I -> CLIP-T-cls -> CLIP-T -> DIV
+```
+
+The selected value and complete winning metrics row are saved to:
+
+```text
+output/ablation_vico/20_subject_prompt_alpha_beta/selected_beta.json
+```
+
+To select using another metric:
+
+```bash
+BETA_SELECTION_METRIC=clip_i \
+bash ablation/05_subject_prompt_alpha_beta.sh
+```
+
+Supported selection fields include `dino`, `clip_i`, `clip_t`, `clip_t_cls`, `div`, `csd_content`, and `csd_style`.
+
+## 6. Sweep values
+
+Beta stage:
+
+```text
 alpha = 0
+beta  = 0.6, 0.7, 0.8, 0.9, 1.0
 ```
 
-The smoke test generates `5 beta variants × 5 prompts × 1 sample = 25 images`.
-
-## 3. Run the full beta sweep
-
-```bash
-SWEEP=beta \
-FIXED_ALPHA=0 \
-bash ablation/05_subject_prompt_alpha_beta.sh all
-```
-
-The complete beta stage generates:
+Alpha stage:
 
 ```text
-5 variants × 16 subjects × 31 prompts × 8 samples = 19,840 images
-```
-
-Results are saved under:
-
-```text
-output/ablation_vico/20_subject_prompt_alpha_beta/beta/
-├── beta_a0_b0.6/
-├── beta_a0_b0.7/
-├── beta_a0_b0.8/
-├── beta_a0_b0.9/
-├── beta_a0_b1/
-├── summary.csv
-└── summary.md
-```
-
-Inspect the summary:
-
-```bash
-column -s, -t output/ablation_vico/20_subject_prompt_alpha_beta/beta/summary.csv | less -S
-```
-
-Select beta from the `overall` row, using DINO and CLIP-I as the primary identity criteria while checking that CLIP-T, CLIP-T-cls and DIV do not collapse. PRES and CSD metrics can be used as additional evidence when the evaluator emits them. Do not select beta from a single best image.
-
-For example, suppose the selected value is:
-
-```bash
-BEST_BETA=0.9
-```
-
-## 4. Sweep alpha with the selected beta
-
-Run a small alpha smoke test first:
-
-```bash
-BEST_BETA=0.9
-
-SUBJECTS=black_cat \
-NUM_PROMPTS=5 \
-NUM_SAMPLES=1 \
-SWEEP=alpha \
-FIXED_BETA="$BEST_BETA" \
-bash ablation/05_subject_prompt_alpha_beta.sh all
-```
-
-Then run the complete alpha experiment:
-
-```bash
-BEST_BETA=0.9
-
-SWEEP=alpha \
-FIXED_BETA="$BEST_BETA" \
-bash ablation/05_subject_prompt_alpha_beta.sh all
-```
-
-This tests:
-
-```text
+beta  = automatically selected
 alpha = 0, 0.1, 0.2, 0.3, 0.4
-beta = 0.9 fixed
 ```
 
-The `alpha=0` row is the selected beta baseline repeated in the alpha stage. It is intentionally retained as a paired reference for the four nonzero alpha values.
+Override either list if needed:
 
-Alpha results are saved under:
+```bash
+BETAS=0.7,0.8,0.9 \
+ALPHAS=0,0.05,0.1,0.15 \
+bash ablation/05_subject_prompt_alpha_beta.sh
+```
+
+## 7. Images, metrics, and logs
+
+Generated images and metrics:
 
 ```text
-output/ablation_vico/20_subject_prompt_alpha_beta/alpha/
-├── alpha_a0_b0.9/
-├── alpha_a0.1_b0.9/
-├── alpha_a0.2_b0.9/
-├── alpha_a0.3_b0.9/
-├── alpha_a0.4_b0.9/
-├── summary.csv
-└── summary.md
+output/ablation_vico/20_subject_prompt_alpha_beta/
+├── beta/
+│   ├── beta_a0_b0.6/
+│   ├── beta_a0_b0.7/
+│   ├── beta_a0_b0.8/
+│   ├── beta_a0_b0.9/
+│   ├── beta_a0_b1/
+│   ├── summary.csv
+│   └── summary.md
+├── alpha/
+│   ├── alpha_a0_b<selected>/
+│   ├── alpha_a0.1_b<selected>/
+│   ├── alpha_a0.2_b<selected>/
+│   ├── alpha_a0.3_b<selected>/
+│   ├── alpha_a0.4_b<selected>/
+│   ├── summary.csv
+│   └── summary.md
+└── selected_beta.json
 ```
 
-## 5. Metrics produced
+Central pipeline logs:
 
-`all` performs optimization/reuse, generation and evaluation. Every variant keeps all generated images and writes:
+```text
+output/ablation_vico/20_subject_prompt_alpha_beta/logs/
+├── offset_optimization.log
+├── beta_generation.log
+├── beta_evaluation.log
+├── beta_selection.log
+├── alpha_generation.log
+└── alpha_evaluation.log
+```
+
+Detailed step-by-step loss logs remain under each subject offset:
+
+```text
+output/ablation_vico/offsets/ls0-4_subjtext_it200_bsc_noaug/<subject>/optimize.log
+```
+
+Every evaluated variant retains:
 
 ```text
 config.json
@@ -192,7 +233,7 @@ metrics.csv
 <subject>/<subject>_metrics.csv
 ```
 
-The stage-level `summary.csv` and `summary.md` include overall, live-subject and object-subject aggregates for every metric implemented by the evaluation pipeline:
+The summaries contain:
 
 ```text
 DINO
@@ -200,47 +241,49 @@ CLIP-I
 CLIP-T
 CLIP-T-cls
 DIV
-PRES          (when emitted by the evaluator)
-CSD-content   (when emitted by the evaluator)
-CSD-style     (when emitted by the evaluator)
+PRES when available
+CSD-content
+CSD-style
 ```
 
-Optional metrics remain blank when the external evaluator does not emit them; they are no longer silently removed from the summary.
+## 8. Resume behavior
 
-## 6. Run stages separately
-
-Use the same `SWEEP` value for generation and evaluation so the same output folder is selected.
+Rerun the same automatic command after an interruption:
 
 ```bash
-# Prepare/reuse offsets
-SWEEP=beta bash ablation/05_subject_prompt_alpha_beta.sh optimize
-
-# Generate the beta variants
-SWEEP=beta FIXED_ALPHA=0 bash ablation/05_subject_prompt_alpha_beta.sh generate
-
-# Evaluate beta variants and rebuild summary.csv/summary.md
-SWEEP=beta FIXED_ALPHA=0 bash ablation/05_subject_prompt_alpha_beta.sh eval
-
-# Generate/evaluate alpha after choosing beta=0.9
-SWEEP=alpha FIXED_BETA=0.9 bash ablation/05_subject_prompt_alpha_beta.sh generate
-SWEEP=alpha FIXED_BETA=0.9 bash ablation/05_subject_prompt_alpha_beta.sh eval
+bash ablation/05_subject_prompt_alpha_beta.sh
 ```
+
+Existing offsets and complete prompt folders are reused. The progress bars count reused images as completed.
 
 To force metric recomputation:
 
 ```bash
-FORCE_EVAL=1 SWEEP=beta FIXED_ALPHA=0 \
-bash ablation/05_subject_prompt_alpha_beta.sh eval
+FORCE_EVAL=1 bash ablation/05_subject_prompt_alpha_beta.sh
 ```
 
-## 7. Expected runtime
+To use a fresh output directory:
 
-Using the previous measured rate of approximately `1.855 seconds/image`:
-
-```text
-beta inference:  ~10.2 hours
-alpha inference: ~10.2 hours
-both:            ~20.4 hours
+```bash
+OUT_BASE=output/ablation_vico/new_beta_then_alpha \
+bash ablation/05_subject_prompt_alpha_beta.sh
 ```
 
-Allow additional time for the initial 16 offsets and metric evaluation. The practical end-to-end estimate for both stages is approximately `23–27 hours` on one comparable GPU.
+## 9. Manual stages
+
+The old manual controls remain available:
+
+```bash
+# Offsets only
+bash ablation/05_subject_prompt_alpha_beta.sh optimize
+
+# Beta only
+SWEEP=beta FIXED_ALPHA=0 \
+bash ablation/05_subject_prompt_alpha_beta.sh all
+
+# Alpha only with an explicit beta
+SWEEP=alpha FIXED_BETA=0.9 \
+bash ablation/05_subject_prompt_alpha_beta.sh all
+```
+
+At the previously measured rate of approximately `1.855 seconds/image`, generation takes about `10.2 hours` per stage or `20.4 hours` for both stages. Allow additional time for initial offset optimization and metric evaluation.

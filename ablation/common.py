@@ -25,6 +25,8 @@ import sys
 import time
 from dataclasses import asdict, dataclass, field
 
+from tqdm.auto import tqdm
+
 sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
 
 import cv2
@@ -87,6 +89,8 @@ def add_args(parser):
     parser.add_argument('--blend_scales', default='all')
     parser.add_argument('--top_k', type=int, default=900)
     parser.add_argument('--top_p', type=float, default=0.97)
+    parser.add_argument('--progress', action='store_true', help='show one image-level tqdm bar')
+    parser.add_argument('--progress_desc', default='generation', help='label for --progress')
     parser.set_defaults(cfg='1.5', tau=1.0)
     return parser
 
@@ -225,6 +229,20 @@ def run(args, variants):
     subjects = read_vico(args.data_dir, args.subjects, args.num_prompts, args.prompt_name)
     for sub in subjects:
         sub['prompts'] = [p + args.prompt_suffix for p in sub['prompts']]
+    progress_stream = None
+    progress = None
+    if args.progress:
+        try:
+            progress_stream = open('/dev/tty', 'w')
+        except OSError:
+            progress_stream = sys.stderr
+        progress = tqdm(
+            total=len(variants) * sum(len(sub['prompts']) for sub in subjects) * args.num_samples,
+            desc=args.progress_desc,
+            unit='img',
+            dynamic_ncols=True,
+            file=progress_stream,
+        )
     vae, infinity, t5 = load_models(args, [p for sub in subjects for p in sub['prompts']] + [subject_name(sub['subject']) for sub in subjects])
     _, scale_schedule, _ = get_scale_schedule(args, 1.0)
     num_scales = len(scale_schedule)
@@ -244,6 +262,8 @@ def run(args, variants):
             for p_idx, prompt in enumerate(sub['prompts']):
                 pdir = osp.join(vdir, sub['subject'], f'prompt_{p_idx:02d}')
                 if osp.isdir(pdir) and len([f for f in os.listdir(pdir) if f.endswith('.jpg')]) >= args.num_samples:
+                    if progress is not None:
+                        progress.update(args.num_samples)
                     continue
                 os.makedirs(pdir, exist_ok=True)
                 texts = encode_texts(infinity, args.null_len, t5[prompt])
@@ -259,5 +279,11 @@ def run(args, variants):
                     for i, img in enumerate(imgs):
                         cv2.imwrite(osp.join(pdir, f'{start + i:02d}.jpg'), img)
                     made += n
+                    if progress is not None:
+                        progress.update(n)
             if made:
                 print(f'   [{v.name}] {sub["subject"]}: {made} images, {(time.time() - stt) / made:.2f}s/img', flush=True)
+    if progress is not None:
+        progress.close()
+    if progress_stream not in (None, sys.stderr):
+        progress_stream.close()

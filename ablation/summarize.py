@@ -21,7 +21,7 @@ for name in sorted(os.listdir(part)):
                 group = r['subject'][1:r['subject'].index(']')]
                 n_sub = r['subject'].split('(')[1].split()[0]
                 rows.append(dict(variant=name, group=group, subjects=n_sub, alpha=v['alpha'], blend=v['blend'], ca=v['ca'],
-                                 offset=v['offset'], offset_scales=v['offset_scales'], cfg=v['cfg'],
+                                 beta=v.get('offset_weight', 1.0), offset=v['offset'], offset_scales=v['offset_scales'], cfg=v['cfg'],
                                  **{m: f'{float(r[m]):.4f}' if r.get(m, '') else '' for m in METRICS}))
 if not rows:
     sys.exit(f'no metrics.csv under {part}')
@@ -29,7 +29,7 @@ with open(osp.join(part, 'summary.csv'), 'w', newline='') as f:
     w = csv.DictWriter(f, fieldnames=list(rows[0]))
     w.writeheader()
     w.writerows(rows)
-cols = ['variant', 'subjects', 'alpha', 'blend', 'ca', 'offset', 'offset_scales', 'cfg'] + METRICS
+cols = ['variant', 'subjects', 'alpha', 'beta', 'blend', 'ca', 'offset', 'offset_scales', 'cfg'] + METRICS
 lines = []
 for group in ('overall', 'live', 'object'):
     g = [r for r in rows if r['group'] == group]
