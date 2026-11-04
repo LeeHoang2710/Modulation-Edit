@@ -47,8 +47,11 @@ class BitwiseSelfCorrection(object):
                 quantized, _, bit_indices, loss = self.vae.quantizer.lfq(residual) # quantized shape: [B, d_vae, 1, h, w], bit_indices shape: [B,1,h,w,d_vae]
                 gt_all_bit_indices.append(bit_indices)
                 if si < self.noise_apply_layers:
-                    noise_apply_strength = np.random.randint(0, 100 * self.noise_apply_strength+1) * 0.01
-                    mask = torch.rand(*bit_indices.shape).to(device) < noise_apply_strength
+                    # Resample corruption at every scale and every optimizer step.
+                    # The clean bit_indices remain the target; only the history fed
+                    # into the following scale is perturbed and requantized.
+                    noise_apply_strength = torch.rand((), device=device).mul(self.noise_apply_strength)
+                    mask = torch.rand(bit_indices.shape, device=device) < noise_apply_strength
                     pred_bit_indices = bit_indices.clone()
                     pred_bit_indices[mask] = 1 - pred_bit_indices[mask]
                     pred_all_bit_indices.append(pred_bit_indices)
@@ -94,4 +97,3 @@ class BitwiseSelfCorrection(object):
         print(f'Save to {save_path}')
         import pdb; pdb.set_trace()
         print(cat_image.shape)
-        

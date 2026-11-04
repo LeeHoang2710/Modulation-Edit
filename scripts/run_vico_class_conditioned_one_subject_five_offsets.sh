@@ -14,12 +14,14 @@ STEPS="${STEPS:-200}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
 GRAD_ACCUM="${GRAD_ACCUM:-1}"
 LR="${LR:-5e-4}"
+BSC_LAYERS="${BSC_LAYERS:-4}"
+BSC_STRENGTH="${BSC_STRENGTH:-0.3}"
 MAX_PROMPTS="${MAX_PROMPTS:-5}"
 REUSE_OFFSETS="${REUSE_OFFSETS:-1}"
 MANIFEST="${MANIFEST:-benchmark/manifests/vico.json}"
 DATASET="${DATASET:-data/vico}"
-WORK_ROOT="${WORK_ROOT:-benchmark_work/vico_class_conditioned_one_subject_five_offsets}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-benchmark_outputs/vico_class_conditioned_one_subject_five_offsets_alpha01}"
+WORK_ROOT="${WORK_ROOT:-benchmark_work/vico_class_conditioned_one_subject_five_offsets_bsc03}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-benchmark_outputs/vico_class_conditioned_one_subject_five_offsets_bsc03_alpha01}"
 ALPHA_SCHEDULE="0.1,0.1,0.1,0.1,0.1"
 
 [[ "$OFFSET_SEEDS" =~ ^[1-9][0-9]*$ ]] || { echo "OFFSET_SEEDS must be positive" >&2; exit 1; }
@@ -50,7 +52,7 @@ for ((offset_seed=0; offset_seed<OFFSET_SEEDS; offset_seed++)); do
 
   reuse=0
   if [[ "$REUSE_OFFSETS" == "1" && -f "$offset_path" ]]; then
-    if "$PYTHON_BIN" -c 'import sys,torch; c=torch.load(sys.argv[1],map_location="cpu"); assert c.get("train_prompt")==sys.argv[2] and set(c.get("loss_scales",[]))==set(range(5)) and c.get("seed")==int(sys.argv[3]) and c.get("iters")==int(sys.argv[4]) and c.get("batch_size")==int(sys.argv[5]) and c.get("grad_accum")==int(sys.argv[6]) and abs(c.get("lr")-float(sys.argv[7]))<1e-12' "$offset_path" "$TRAIN_PROMPT" "$offset_seed" "$STEPS" "$BATCH_SIZE" "$GRAD_ACCUM" "$LR"; then
+    if "$PYTHON_BIN" -c 'import sys,torch; c=torch.load(sys.argv[1],map_location="cpu"); assert c.get("train_prompt")==sys.argv[2] and set(c.get("loss_scales",[]))==set(range(5)) and c.get("seed")==int(sys.argv[3]) and c.get("iters")==int(sys.argv[4]) and c.get("batch_size")==int(sys.argv[5]) and c.get("grad_accum")==int(sys.argv[6]) and abs(c.get("lr")-float(sys.argv[7]))<1e-12 and c.get("noise_apply_layers")==int(sys.argv[8]) and abs(c.get("noise_apply_strength")-float(sys.argv[9]))<1e-12' "$offset_path" "$TRAIN_PROMPT" "$offset_seed" "$STEPS" "$BATCH_SIZE" "$GRAD_ACCUM" "$LR" "$BSC_LAYERS" "$BSC_STRENGTH"; then
       reuse=1
     fi
   fi
@@ -58,11 +60,12 @@ for ((offset_seed=0; offset_seed<OFFSET_SEEDS; offset_seed++)); do
   if [[ "$reuse" == "1" ]]; then
     echo "[reuse] subject=$SUBJECT offset_seed=$offset_seed path=$offset_path"
   else
-    echo "[fit] subject=$SUBJECT conditioning='$TRAIN_PROMPT' offset_seed=$offset_seed scales=0-4 steps=$STEPS batch=$BATCH_SIZE lr=$LR"
+    echo "[fit] subject=$SUBJECT conditioning='$TRAIN_PROMPT' offset_seed=$offset_seed scales=0-4 steps=$STEPS batch=$BATCH_SIZE lr=$LR bsc_layers=$BSC_LAYERS bsc_strength=$BSC_STRENGTH"
     "$PYTHON_BIN" tools/optimize_ada_offset.py --mode optimize --images "$DATASET/$SUBJECT" \
       "${MODEL[@]}" --train_prompt "$TRAIN_PROMPT" --seed "$offset_seed" --hflip 0 \
       --grad_checkpointing 1 --offset_mode per_scale --iters "$STEPS" \
       --batch_size "$BATCH_SIZE" --grad_accum "$GRAD_ACCUM" --lr "$LR" \
+      --noise_apply_layers "$BSC_LAYERS" --noise_apply_strength "$BSC_STRENGTH" \
       --loss_scales 0-4 --offset_infer_scales 0-4 --num_samples 1 --sample_every 0 \
       --save_offset "$offset_path" --save_file "$offset_dir/reconstruction.jpg" \
       2>&1 | tee "$WORK_ROOT/logs/$SUBJECT/fit_seed${seed_tag}.log"

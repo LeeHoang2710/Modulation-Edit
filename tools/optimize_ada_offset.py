@@ -170,6 +170,10 @@ def optimize(args, infinity, vae, device):
     tgt_h, tgt_w = scale_schedule[-1][1] * 16, scale_schedule[-1][2] * 16
     loss_scales = parse_scales(args.loss_scales, len(scale_schedule))
     fwd_scales = max(loss_scales) + 1  # later scales are not needed in the forward
+    # A prediction at scale s only consumes histories from scales < s. Therefore,
+    # when forwarding scales 0..n, corrupting scale n cannot affect any supervised
+    # token. Clamp BSC to the histories that are actually consumed.
+    effective_noise_layers = min(args.noise_apply_layers, max(fwd_scales - 1, 0))
     fwd_seq_len = int(np.array(scale_schedule)[:fwd_scales].prod(axis=1).sum())
     first_len = int(np.prod(scale_schedule[0]))
     # rope caches are keyed by full schedules; a truncated schedule reuses the full one (its first rows are the same positions)
@@ -187,8 +191,13 @@ def optimize(args, infinity, vae, device):
             raw_features.append(vae.encode_for_raw_features(x.unsqueeze(0).to(device), scale_schedule=vae_scale_schedule)[0])
     raw_features = torch.cat(raw_features, 0)
     bsc = BitwiseSelfCorrection(vae, SimpleNamespace(
-        noise_apply_layers=args.noise_apply_layers, noise_apply_requant=1, noise_apply_strength=args.noise_apply_strength,
+        noise_apply_layers=effective_noise_layers, noise_apply_requant=1, noise_apply_strength=args.noise_apply_strength,
         apply_spatial_patchify=args.apply_spatial_patchify, debug_bsc=0))
+    if effective_noise_layers:
+        print(f'[bsc] corrupting teacher-forced histories at scales 0-{effective_noise_layers - 1}; '
+              f'per-scale bit-flip probability sampled uniformly from [0, {args.noise_apply_strength:g}], clean targets retained')
+    else:
+        print('[bsc] disabled: pure teacher forcing')
 
     freeze_for_offset_training(infinity, args.grad_checkpointing)
     train_cond = None
@@ -210,7 +219,11 @@ def optimize(args, infinity, vae, device):
             'ada_offset': offset.detach().cpu(), 'offset_mode': args.offset_mode, 'null_len': args.null_len, 'pn': args.pn, 'h_div_w_template': h_div_w_template,
             'images': paths, 'loss_scales': loss_scales, 'batch_size': args.batch_size, 'grad_accum': args.grad_accum,
             'iters': iters_done, 'lr': args.lr, 'seed': args.seed, 'hflip': args.hflip,
-            'train_prompt': args.train_prompt, 'log': list(log),
+            'train_prompt': args.train_prompt,
+            'noise_apply_layers': args.noise_apply_layers,
+            'effective_noise_layers': effective_noise_layers,
+            'noise_apply_strength': args.noise_apply_strength,
+            'log': list(log),
         }, path)
         print(f'[saved] offset (it {iters_done}) -> {path}')
 
@@ -339,8 +352,10 @@ if __name__ == '__main__':
     parser.add_argument('--offset_mode', type=str, default='per_scale', choices=['per_scale', 'shared'], help='one offset per scale (S,1,6,C) or one for all scales (1,1,6,C)')
     parser.add_argument('--loss_scales', type=str, default='all', help="scales whose tokens are in the loss and backward, e.g. '0-5' (early scales), '0,2,4', 'all'")
     parser.add_argument('--offset_infer_scales', type=str, default='all', help="scales where the offset is applied at inference, same syntax as --loss_scales")
-    parser.add_argument('--noise_apply_layers', type=int, default=0, help='bitwise self-correction noise on the first N scales (0 = pure teacher forcing)')
-    parser.add_argument('--noise_apply_strength', type=float, default=0.3)
+    parser.add_argument('--noise_apply_layers', type=int, default=0,
+                        help='BSC: corrupt histories produced by the first N scales (0 = pure teacher forcing; use 4 when supervising scales 0-4)')
+    parser.add_argument('--noise_apply_strength', type=float, default=0.3,
+                        help='BSC maximum bit-flip probability; each affected scale samples uniformly from [0, value]')
     parser.add_argument('--grad_checkpointing', type=int, default=1, choices=[0, 1])
     parser.add_argument('--log_every', type=int, default=10)
     parser.add_argument('--sample_every', type=int, default=0, help='also sample every N steps to <save_file stem>_progress/ (0 = only at the end)')
@@ -364,6 +379,10 @@ if __name__ == '__main__':
     if any(step <= 0 or step >= args.iters for step in args.save_offset_at):
         parser.error('--save_offset_at steps must be between 1 and iters-1')
     args.cfg = float(args.cfg)
+    if args.noise_apply_layers < 0:
+        parser.error('--noise_apply_layers must be >= 0')
+    if not 0.0 <= args.noise_apply_strength <= 1.0:
+        parser.error('--noise_apply_strength must be between 0 and 1')
 
     device = torch.device('cuda')
     vae = load_visual_tokenizer(args)
