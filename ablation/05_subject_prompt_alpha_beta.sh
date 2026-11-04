@@ -12,6 +12,18 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source ablation/_env.sh >/dev/null
 
+if [[ ! -x "$PYTHON" ]]; then
+  echo "Missing experiment Python: $PYTHON" >&2
+  echo "Run: bash scripts/setup_venv.sh" >&2
+  exit 1
+fi
+if ! "$PYTHON" -c 'import torch, cv2, tqdm, flash_attn' >/dev/null 2>&1; then
+  echo "The experiment environment is incomplete: $PYTHON" >&2
+  echo "Required imports: torch, cv2, tqdm, flash_attn" >&2
+  echo "Repair it with: bash scripts/setup_venv.sh" >&2
+  exit 1
+fi
+
 STAGE="${1:-auto}"
 SWEEP="${SWEEP:-beta}"
 ALPHAS="${ALPHAS:-0,0.1,0.2,0.3,0.4}"

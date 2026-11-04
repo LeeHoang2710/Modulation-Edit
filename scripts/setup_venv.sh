@@ -24,8 +24,8 @@ pip=(.venv/bin/python -m pip install -q)
 "${pip[@]}" opencv-python-headless
 
 .venv/bin/python - <<'EOF'
-import torch, flash_attn, cv2, timm
+import torch, flash_attn, cv2, timm, tqdm
 assert torch.__version__.startswith('2.5.1'), torch.__version__
 assert torch.cuda.is_available(), 'CUDA not available'
-print(f'torch {torch.__version__} (cuda {torch.version.cuda}), flash_attn {flash_attn.__version__}, timm {timm.__version__}, cv2 {cv2.__version__}: OK')
+print(f'torch {torch.__version__} (cuda {torch.version.cuda}), flash_attn {flash_attn.__version__}, timm {timm.__version__}, cv2 {cv2.__version__}, tqdm {tqdm.__version__}: OK')
 EOF

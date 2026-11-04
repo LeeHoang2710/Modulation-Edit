@@ -50,11 +50,19 @@ cd /workspace/Modulation-Edit
 
 bash scripts/setup_venv.sh
 
+# This must succeed before running an experiment. It verifies the exact
+# interpreter used by every ablation launcher.
+.venv/bin/python -c 'import torch, cv2, tqdm, flash_attn; print(torch.__version__, cv2.__version__)'
+
 USE_ACTIVE_PYTHON=1 PYTHON_BIN=.venv/bin/python \
   bash scripts/download_vastai_weights.sh
 
 bash scripts/prepare_vico_ablation_assets.sh
 ```
+
+Do not continue if `setup_venv.sh` or the import check fails. If `.venv`
+already exists but is incomplete, rerunning `setup_venv.sh` repairs it; it does
+not require deleting the environment.
 
 The asset script creates:
 

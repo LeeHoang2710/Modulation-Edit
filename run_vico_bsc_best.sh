@@ -28,11 +28,16 @@ echo "subjects (${#SUBJ[@]}): ${SUBJ[*]}"
 
 # ---------------------------------------------------------------- 1) optimize
 if [ "$STAGE" = optimize ] || [ "$STAGE" = all ]; then
+  failed=()
   for s in "${SUBJ[@]}"; do
     OFF=$OFFSET_ROOT/$s
     [ -f "$OFF/offset.pth" ] && { echo "skip optimize $s"; continue; }
     mkdir -p "$OFF"
-    name=$($PYTHON -c "import sys; sys.path.insert(0, 'ablation'); from common import subject_name; print(subject_name('$s'))" 2>/dev/null | tail -1)
+    if ! name=$($PYTHON -c "import sys; sys.path.insert(0, 'ablation'); from common import subject_name; print(subject_name('$s'))"); then
+      echo "FAILED resolving the training prompt for $s with $PYTHON"
+      failed+=("$s")
+      continue
+    fi
     echo "[$(date)] optimize $s (train prompt '$name')"
     $PYTHON tools/optimize_ada_offset.py --mode optimize "${model[@]}" \
         --images "$VICO_DIR/$s+photo/imgs" --hflip 0 \
@@ -41,9 +46,13 @@ if [ "$STAGE" = optimize ] || [ "$STAGE" = all ]; then
         --noise_apply_layers 13 --noise_apply_strength 0.3 \
         --train_prompt "$name" \
         --log_every 10 --save_offset "$OFF/offset.pth" --save_file '' > "$OFF/optimize.log" 2>&1 \
-      || { echo "FAILED optimize $s, see $OFF/optimize.log"; continue; }
+      || { echo "FAILED optimize $s, see $OFF/optimize.log"; failed+=("$s"); continue; }
     grep -E '^\[it  199' "$OFF/optimize.log" | cut -c1-60
   done
+  if [ ${#failed[@]} -ne 0 ]; then
+    echo "FAILED subjects: ${failed[*]}"
+    exit 1
+  fi
 fi
 
 # ---------------------------------------------------------------- 2) generate
