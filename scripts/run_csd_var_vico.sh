@@ -5,14 +5,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 SUBJECTS="${SUBJECTS:-all}"
 MAX_PROMPTS="${MAX_PROMPTS:-0}"
-IMAGES_PER_PROMPT="${IMAGES_PER_PROMPT:-8}"
+INFERENCE_SEEDS="${INFERENCE_SEEDS:-0,1,2,3,4}"
+IMAGES_PER_PROMPT="${IMAGES_PER_PROMPT:-5}"
 STEPS="${STEPS:-200}"
 CHECKPOINT_STEP="${CHECKPOINT_STEP:-150}"
 SAVE_EVERY="${SAVE_EVERY:-50}"
-SEED="${SEED:-42}"
-RESULTS="${RESULTS:-benchmark_outputs_vico_csd_var}"
-WORK_DIR="${WORK_DIR:-benchmark_work/vico_csd_var}"
-REPORT_DIR="${REPORT_DIR:-benchmark_reports_vico_csd_var}"
+RESULTS="${RESULTS:-benchmark_outputs_vico_csd_var_5seeds}"
+WORK_DIR="${WORK_DIR:-benchmark_work/vico_csd_var_5seeds}"
+REPORT_DIR="${REPORT_DIR:-benchmark_reports_vico_csd_var_5seeds}"
 SWITTI="${SWITTI:-yresearch/Switti-AR}"
 VAE="${VAE:-yresearch/VQVAE-Switti}"
 CSD_PYTHON="${CSD_PYTHON:-}"
@@ -48,7 +48,7 @@ fi
 "${CSD_CMD[@]}" benchmark/prepare_vico.py
 "${CSD_CMD[@]}" benchmark/run_csd_var_vico.py --subjects "$SUBJECTS" --max-prompts "$MAX_PROMPTS" \
     --images-per-prompt "$IMAGES_PER_PROMPT" --steps "$STEPS" --checkpoint-step "$CHECKPOINT_STEP" \
-    --save-every "$SAVE_EVERY" --seed "$SEED" --switti "$SWITTI" --vae "$VAE" \
+    --save-every "$SAVE_EVERY" --inference-seeds "$INFERENCE_SEEDS" --switti "$SWITTI" --vae "$VAE" \
     --output "$RESULTS" --work-dir "$WORK_DIR"
 "${EVAL_CMD[@]}" benchmark/evaluate_vico_arbooth_protocol.py --results "$RESULTS" \
     --report-dir "$REPORT_DIR" --model-name csd_var_switti --subjects "$SUBJECTS" --max-prompts "$MAX_PROMPTS" \

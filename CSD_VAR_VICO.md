@@ -65,36 +65,37 @@ the named Conda environment is used. To evaluate with another environment,
 set `EVAL_PYTHON` to its Python executable or set `EVAL_ENV_NAME` to its Conda
 name; it must include PyTorch, torchvision and OpenAI CLIP.
 
-## Smoke test: one subject, five prompts, eight samples each
+## Smoke test: one subject, five prompts, five independent seeds
 
 ```bash
-SUBJECTS=brown_dog MAX_PROMPTS=5 IMAGES_PER_PROMPT=8 \
+SUBJECTS=brown_dog MAX_PROMPTS=5 IMAGES_PER_PROMPT=5 \
+  INFERENCE_SEEDS=0,1,2,3,4 \
   RESULTS=benchmark_outputs_vico_csd_var_smoke \
   WORK_DIR=benchmark_work/vico_csd_var_smoke \
   REPORT_DIR=benchmark_reports_vico_csd_var_smoke \
   bash scripts/run_csd_var_vico.sh
 ```
 
-## Full benchmark: 16 subjects × 31 prompts × 8 images
+## Full benchmark: 16 subjects × 31 prompts × 5 independent seeds
 
 ```bash
 bash scripts/run_csd_var_vico.sh
 ```
 
-For a quicker diagnostic run set `IMAGES_PER_PROMPT=1`; this checks the
-pipeline but does not test the eight-image inference batch. `SEED=42` is the
-single upstream RNG initialization, not a list of eight independent seeds.
+For a quicker diagnostic run, set both `IMAGES_PER_PROMPT=1` and
+`INFERENCE_SEEDS=0`. The full protocol launches upstream inference separately
+for seeds `0,1,2,3,4`, with one image per prompt in each process.
 
 The script refuses to overwrite existing subject outputs. Use fresh `RESULTS`
 and `WORK_DIR` values for a rerun, including after an interrupted inference.
-Sample filenames `seed_000.png` etc. are evaluator-compatible indices, not
-claims that individual RNG seeds 0–7 were set. The image folder and numerical reports are:
+Sample filenames `seed_000.png` through `seed_004.png` record the actual RNG
+seed used for each independent upstream inference. The image folder and numerical reports are:
 
 ```text
-benchmark_outputs_vico_csd_var/
-benchmark_reports_vico_csd_var/summary.csv
-benchmark_reports_vico_csd_var/per_subject_metrics.csv
-benchmark_reports_vico_csd_var/per_prompt_metrics.csv
+benchmark_outputs_vico_csd_var_5seeds/
+benchmark_reports_vico_csd_var_5seeds/summary.csv
+benchmark_reports_vico_csd_var_5seeds/per_subject_metrics.csv
+benchmark_reports_vico_csd_var_5seeds/per_prompt_metrics.csv
 ```
 
 CLIP-T defaults to the same *unrendered* ViCo templates as the released ARBooth
