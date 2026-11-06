@@ -73,7 +73,7 @@ run_optimize() {
 }
 
 run_generate() {
-  local sweep="$1" fixed_alpha="$2" fixed_beta="$3" description="$4" log_file="$5"
+  local sweep="$1" fixed_alpha="$2" fixed_beta="$3" num_samples="$4" description="$5" log_file="$6"
   "$PYTHON" ablation/ablation_alpha_beta.py \
     --out_dir "${OUT_BASE}/${sweep}" \
     --offset_root "$OFFSET_ROOT" \
@@ -86,6 +86,7 @@ run_generate() {
     --progress \
     --progress_desc "$description" \
     "${infer_args[@]}" \
+    --num_samples "$num_samples" \
     > "$LOG_DIR/$log_file" 2>&1
 }
 
@@ -98,7 +99,7 @@ run_eval() {
 if [[ "$STAGE" == "auto" ]]; then
   trap 'printf "\nPipeline failed. Check logs under %s\n" "$LOG_DIR" >&2' ERR
   run_optimize
-  run_generate beta 0 "$FIXED_BETA" "1/2 beta sweep" beta_generation.log
+  run_generate beta 0 "$FIXED_BETA" 8 "1/2 beta sweep" beta_generation.log
   run_eval beta beta_evaluation.log
 
   "$PYTHON" ablation/select_best_beta.py \
@@ -108,7 +109,7 @@ if [[ "$STAGE" == "auto" ]]; then
     > "$LOG_DIR/beta_selection.log" 2>&1
   SELECTED_BETA="$("$PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1]))["selected_beta"])' "$SELECTION_FILE")"
 
-  run_generate alpha "$FIXED_ALPHA" "$SELECTED_BETA" "2/2 alpha sweep" alpha_generation.log
+  run_generate alpha "$FIXED_ALPHA" "$SELECTED_BETA" 4 "2/2 alpha sweep" alpha_generation.log
   run_eval alpha alpha_evaluation.log
   exit 0
 fi

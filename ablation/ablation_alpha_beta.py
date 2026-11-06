@@ -17,9 +17,6 @@ import torch
 from common import Variant, add_args, read_vico, run, subject_name
 
 
-OFFSET_SCALES = "0,2-4"
-
-
 def csv_floats(value):
     values = [float(item.strip()) for item in value.split(",") if item.strip()]
     if not values:
@@ -30,7 +27,7 @@ def csv_floats(value):
 def validate_offsets(args):
     """Reject stale null-conditioned or otherwise mismatched checkpoints."""
     subjects = read_vico(args.data_dir, args.subjects, args.num_prompts, args.prompt_name)
-    expected_scales = set(range(5))
+    expected_scales = set(range(args.loss_scales_end + 1))
     for item in subjects:
         path = osp.join(args.offset_root, item["subject"], "offset.pth")
         if not osp.isfile(path):
@@ -43,7 +40,10 @@ def validate_offsets(args):
                 f"train_prompt={checkpoint.get('train_prompt')!r}, expected {expected_prompt!r}"
             )
         if set(checkpoint.get("loss_scales", ())) != expected_scales:
-            problems.append(f"loss_scales={checkpoint.get('loss_scales')!r}, expected 0-4")
+            problems.append(
+                f"loss_scales={checkpoint.get('loss_scales')!r}, "
+                f"expected 0-{args.loss_scales_end}"
+            )
         if checkpoint.get("hflip") not in (0, False):
             problems.append(f"hflip={checkpoint.get('hflip')!r}, expected 0")
         expected_values = {
@@ -69,10 +69,10 @@ def variant(name, alpha, beta, args):
         ca="prompt",                  # full prompt CA at every scale
         offset="learned",
         offset_root=args.offset_root,
-        offset_scales=OFFSET_SCALES,
+        offset_scales=args.offset_scales,
         offset_weight=beta,
         base_text="subject",
-        blend_scales=OFFSET_SCALES,    # no prompt modulation outside {0,2,3,4}
+        blend_scales=args.offset_scales,
         cfg=float(args.cfg),
         tau=args.tau,
         extra={"sweep": args.sweep, "formula": "G_subject + beta*D + alpha*G_prompt"},
@@ -88,12 +88,16 @@ def main():
                         help="alpha used by the beta-only sweep")
     parser.add_argument("--fixed-beta", type=float, default=0.9,
                         help="beta used by the alpha-only sweep")
+    parser.add_argument("--offset-scales", default="0,2-4")
+    parser.add_argument("--loss-scales-end", type=int, default=4)
     args = parser.parse_args()
 
     alphas = args.alphas if args.sweep in ("alpha", "grid") else [args.fixed_alpha]
     betas = args.betas if args.sweep in ("beta", "grid") else [args.fixed_beta]
-    if any(not 0.0 <= value <= 1.0 for value in alphas + betas):
-        parser.error("all alpha and beta values must be in [0, 1]")
+    if any(not 0.0 <= value <= 1.0 for value in alphas):
+        parser.error("all alpha values must be in [0, 1]")
+    if any(value < 0.0 for value in betas):
+        parser.error("all beta values must be non-negative")
 
     validate_offsets(args)
     variants = [
@@ -103,7 +107,7 @@ def main():
     ]
     print(
         f"[ablation] sweep={args.sweep} variants={len(variants)} "
-        f"alphas={alphas} betas={betas} offset_scales={OFFSET_SCALES}",
+        f"alphas={alphas} betas={betas} offset_scales={args.offset_scales}",
         flush=True,
     )
     run(args, variants)

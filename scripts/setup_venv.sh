@@ -21,7 +21,7 @@ pip=(.venv/bin/python -m pip install -q)
 "${pip[@]}" -r requirements.txt huggingface_hub   # torch / flash_attn pins are already satisfied, so nothing is rebuilt
 # opencv-python needs libGL, which this container lacks; the headless build provides the same cv2 module
 .venv/bin/python -m pip uninstall -q -y opencv-python
-"${pip[@]}" opencv-python-headless
+"${pip[@]}" --force-reinstall --no-cache-dir opencv-python-headless==4.10.0.84
 
 .venv/bin/python - <<'EOF'
 import torch, flash_attn, cv2, timm, tqdm

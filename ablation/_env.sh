@@ -4,8 +4,14 @@ PYTHON=${PYTHON:-.venv/bin/python}                                   # Infinity 
 if [ -z "${EVAL_PYTHON:-}" ]; then
     if command -v conda >/dev/null 2>&1; then
         EVAL_PYTHON="$(conda info --base)/envs/csd-var/bin/python"
-    else
+    elif [ -x /venv/csd-var/bin/python ]; then
+        EVAL_PYTHON=/venv/csd-var/bin/python
+    elif [ -x /opt/miniforge3/envs/csd-var/bin/python ]; then
+        EVAL_PYTHON=/opt/miniforge3/envs/csd-var/bin/python
+    elif [ -x /root/miniconda3/envs/csd-var/bin/python ]; then
         EVAL_PYTHON=/root/miniconda3/envs/csd-var/bin/python
+    else
+        EVAL_PYTHON=/venv/csd-var/bin/python
     fi
 fi
 VICO_DIR=${VICO_DIR:-/workspace/CSD-VAR/benchmark_data/vico_csd}
