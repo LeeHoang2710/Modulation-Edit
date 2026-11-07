@@ -14,7 +14,7 @@ if ! conda env list | awk '{print $1}' | grep -Fxq "$ENV_NAME"; then
     conda create --yes --name "$ENV_NAME" python=3.10 pip
 fi
 PY=(conda run --no-capture-output -n "$ENV_NAME" python)
-"${PY[@]}" -m pip install --upgrade 'pip<24.1' setuptools wheel
+"${PY[@]}" -m pip install --upgrade 'pip<24.1' 'setuptools<81' wheel
 "${PY[@]}" -m pip install \
     torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 \
     --index-url "https://download.pytorch.org/whl/${CUDA_WHL}"

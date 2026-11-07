@@ -1,6 +1,8 @@
 """Shared ViCo subject/source-image helpers for DreamMatcher protocols."""
+import random
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torchvision.io import read_image
@@ -29,3 +31,13 @@ CONCEPT_INPUT_NAMES = {
 def load_image(path: Path, device: torch.device) -> torch.Tensor:
     image = read_image(str(path))[:3].unsqueeze(0).float() / 127.5 - 1.0
     return F.interpolate(image, (512, 512)).to(device)
+
+
+def seed_everything(seed: int) -> int:
+    """Seed the RNGs used by these runners without importing Lightning."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    return seed

@@ -44,6 +44,18 @@ class PersonalizationAdapterTests(unittest.TestCase):
         self.assertIn("regiter_attention_editor_diffusers(pipe, AttentionBase())", source)
         self.assertIn("[ref_prompt, prompt]", source)
         self.assertNotIn("from src.diffusers_model_pipeline import CustomDiffusionPipeline", source)
+        self.assertNotIn("pytorch_lightning", source)
+
+    def test_runners_use_lightweight_shared_seeding(self):
+        common = (ROOT / "benchmark/dreammatcher_vico_common.py").read_text()
+        self.assertIn("def seed_everything(seed: int)", common)
+        for relative in (
+            "benchmark/run_custom_diffusion_vico.py",
+            "benchmark/run_dreammatcher_custom_diffusion_vico.py",
+        ):
+            source = (ROOT / relative).read_text()
+            self.assertIn("seed_everything", source)
+            self.assertNotIn("from pytorch_lightning", source)
 
     def test_launchers_use_shared_evaluator_with_five_images(self):
         for relative in (

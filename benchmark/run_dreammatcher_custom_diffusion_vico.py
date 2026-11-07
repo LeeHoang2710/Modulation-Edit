@@ -11,7 +11,7 @@ from pathlib import Path
 import torch
 from torchvision.utils import save_image
 
-from dreammatcher_vico_common import CONCEPT_INPUT_NAMES, load_image
+from dreammatcher_vico_common import CONCEPT_INPUT_NAMES, load_image, seed_everything
 
 
 def parse_seeds(value: str) -> list[int]:
@@ -61,7 +61,6 @@ def main() -> None:
     from dreammatcher.diffuser_utils import CustomDiffusionPipeline
     from dreammatcher.dreammatcher import MutualSelfAttentionControlMaskAuto_Matching
     from dreammatcher.dreammatcher_utils import AttentionBase, regiter_attention_editor_diffusers
-    from pytorch_lightning import seed_everything
 
     manifest = json.loads((root / args.manifest).read_text())
     subjects = selected_subjects(manifest, args.subjects)
