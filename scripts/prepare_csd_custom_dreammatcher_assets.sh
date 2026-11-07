@@ -13,6 +13,7 @@ DRIVE_URL="${CUSTOM_DIFFUSION_DRIVE_URL:-https://drive.google.com/drive/folders/
 mkdir -p "$WEIGHTS"
 "${PY[@]}" - "$DRIVE_URL" "$WEIGHTS" <<'PY'
 import sys
+import inspect
 from pathlib import Path
 import gdown
 
@@ -25,7 +26,17 @@ subjects = {
 }
 missing = [name for name in subjects if not (destination / name / "delta.bin").is_file()]
 if missing:
-    gdown.download_folder(url=url, output=str(destination), quiet=False, use_cookies=False, remaining_ok=True)
+    download_args = {
+        "url": url,
+        "output": str(destination),
+        "quiet": False,
+        "use_cookies": False,
+    }
+    # `remaining_ok` was added in newer gdown versions. Keep this script
+    # compatible with the older release already present in some Vast.ai images.
+    if "remaining_ok" in inspect.signature(gdown.download_folder).parameters:
+        download_args["remaining_ok"] = True
+    gdown.download_folder(**download_args)
 missing = [name for name in subjects if not (destination / name / "delta.bin").is_file()]
 if missing:
     raise SystemExit(f"Custom Diffusion checkpoints are incomplete: {missing}")

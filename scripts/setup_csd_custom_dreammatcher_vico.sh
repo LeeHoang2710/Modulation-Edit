@@ -20,7 +20,7 @@ PY=(conda run --no-capture-output -n "$ENV_NAME" python)
     --index-url "https://download.pytorch.org/whl/${CUDA_WHL}"
 "${PY[@]}" -m pip install \
     accelerate==0.24.1 transformers==4.31.0 huggingface-hub==0.17.3 \
-    safetensors==0.4.5 pytorch-lightning==1.9.5 einops matplotlib jmespath \
+    safetensors==0.4.5 pytorch-lightning==1.9.5 importlib-metadata einops matplotlib jmespath \
     opencv-python-headless pillow==9.5.0 gdown omegaconf scipy
 "${PY[@]}" -m pip install --no-deps -e models/DreamMatcher/diffusers
 "${PY[@]}" -m pip install 'git+https://github.com/openai/CLIP.git@main'
