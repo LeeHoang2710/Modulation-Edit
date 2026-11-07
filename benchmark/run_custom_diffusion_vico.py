@@ -9,6 +9,9 @@ import time
 from pathlib import Path
 
 import torch
+from torchvision.utils import save_image
+
+from dreammatcher_vico_common import CONCEPT_INPUT_NAMES, load_image
 
 
 def parse_seeds(value: str) -> list[int]:
@@ -41,9 +44,8 @@ def main() -> None:
     parser.add_argument("--base-model", default="CompVis/stable-diffusion-v1-4")
     parser.add_argument("--weights", default="weights/custom_diffusion")
     parser.add_argument("--output", default="benchmark_outputs_vico_custom_diffusion_5seeds")
-    parser.add_argument("--steps", type=int, default=200)
-    parser.add_argument("--guidance-scale", type=float, default=6.0)
-    parser.add_argument("--eta", type=float, default=1.0)
+    parser.add_argument("--steps", type=int, default=50)
+    parser.add_argument("--guidance-scale", type=float, default=10.0)
     args = parser.parse_args()
     if args.max_prompts < 0 or args.steps < 1:
         parser.error("--max-prompts must be non-negative and --steps must be positive")
@@ -55,53 +57,81 @@ def main() -> None:
         raise SystemExit("Custom Diffusion inference requires CUDA")
 
     root = Path(__file__).resolve().parents[1]
-    custom_root = root / "models/Custom-Diffusion"
-    if not (custom_root / "src/diffusers_model_pipeline.py").is_file():
-        raise SystemExit("Custom Diffusion submodule is missing; initialize repository submodules")
-    sys.path.insert(0, str(custom_root))
-    from src.diffusers_model_pipeline import CustomDiffusionPipeline
+    dream_root = root / "models/DreamMatcher"
+    if not (dream_root / "dreammatcher/diffuser_utils.py").is_file():
+        raise SystemExit("DreamMatcher submodule is missing; initialize repository submodules")
+    # DreamMatcher's UNet returns (noise, intermediate_features). Its matching
+    # CustomDiffusionPipeline consumes that exact interface; the stock Diffusers
+    # StableDiffusionPipeline does not.
+    sys.path.insert(0, str(dream_root / "diffusers/src"))
+    sys.path.insert(0, str(dream_root))
+    from diffusers import DDIMScheduler
+    from dreammatcher.diffuser_utils import CustomDiffusionPipeline
+    from dreammatcher.dreammatcher_utils import AttentionBase, regiter_attention_editor_diffusers
+    from pytorch_lightning import seed_everything
 
     manifest = json.loads((root / args.manifest).read_text())
     subjects = selected_subjects(manifest, args.subjects)
     weights_root = (root / args.weights).resolve()
     output_root = (root / args.output).resolve()
+    source_map = json.loads((dream_root / "inputs/imgs_source.txt").read_text())
+    device = torch.device("cuda")
 
     for item in subjects:
         subject = item["subject"]
+        input_name = CONCEPT_INPUT_NAMES[subject]
+        source_path = dream_root / "inputs" / input_name / source_map[input_name]
         delta = weights_root / subject / "delta.bin"
-        if not delta.is_file():
-            raise FileNotFoundError(f"Missing Custom Diffusion checkpoint: {delta}")
+        if not source_path.is_file() or not delta.is_file():
+            raise FileNotFoundError(f"Missing source image or Custom Diffusion checkpoint: {source_path}, {delta}")
         subject_output = output_root / subject
         if subject_output.exists():
             raise RuntimeError(f"Output already exists for {subject}: {subject_output}")
 
         load_started = time.monotonic()
+        scheduler = DDIMScheduler.from_pretrained(args.base_model, subfolder="scheduler")
         pipe = CustomDiffusionPipeline.from_pretrained(
             args.base_model,
-            torch_dtype=torch.float16,
+            scheduler=scheduler,
             safety_checker=None,
         ).to("cuda")
         pipe.load_model(str(delta), False)
+        source_image = load_image(source_path, device)
+        # This is DreamMatcher's released Custom Diffusion baseline protocol:
+        # invert the designated reference, but use a no-op attention editor.
+        seed_everything(0)
+        start_code, _ = pipe.invert(
+            source_image,
+            "",
+            guidance_scale=args.guidance_scale,
+            num_inference_steps=args.steps,
+            return_intermediates=True,
+        )
         load_seconds = time.monotonic() - load_started
 
         prompts = item["prompt_templates"][: args.max_prompts or None]
         inference_seconds: list[float] = []
         for prompt_index, template in enumerate(prompts):
+            ref_prompt = f"a photo of a <new1> {subject}"
             prompt = rendered_prompt(template, subject)
             prompt_dir = subject_output / f"prompt_{prompt_index:02d}"
             prompt_dir.mkdir(parents=True, exist_ok=False)
             for seed in seeds:
-                generator = torch.Generator(device="cuda").manual_seed(seed)
+                seed_everything(seed)
+                end_code = torch.randn((1, 4, 64, 64), device=device)
+                regiter_attention_editor_diffusers(pipe, AttentionBase())
+                initial_code = torch.cat([start_code, end_code], dim=0)
                 started = time.monotonic()
-                image = pipe(
-                    prompt,
+                images = pipe(
+                    [ref_prompt, prompt],
+                    latents=initial_code,
                     num_inference_steps=args.steps,
                     guidance_scale=args.guidance_scale,
-                    eta=args.eta,
-                    generator=generator,
-                ).images[0]
+                    outdir=str(prompt_dir),
+                    save_pred_x0=False,
+                )
                 inference_seconds.append(time.monotonic() - started)
-                image.save(prompt_dir / f"seed_{seed:03d}.png")
+                save_image(images[1], prompt_dir / f"seed_{seed:03d}.png")
 
         timing = {
             "model_load_seconds": load_seconds,
@@ -116,9 +146,11 @@ def main() -> None:
             "prompt_protocol": "DreamMatcher released convention: <new1> plus ViCo subject identifier",
             "base_model": args.base_model,
             "delta_checkpoint": str(delta),
+            "source_image": str(source_path),
             "steps": args.steps,
             "guidance_scale": args.guidance_scale,
-            "eta": args.eta,
+            "pipeline": "DreamMatcher CustomDiffusion baseline (matching disabled)",
+            "scheduler": "DDIMScheduler",
         }
         (subject_output / "timing.json").write_text(json.dumps(timing, indent=2) + "\n")
         print(f"[complete] {subject}: {len(prompts) * len(seeds)} images", flush=True)

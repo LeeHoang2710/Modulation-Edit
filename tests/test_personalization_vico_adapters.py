@@ -20,7 +20,7 @@ def assignment_literal(path: Path, name: str):
 
 class PersonalizationAdapterTests(unittest.TestCase):
     def test_dreammatcher_aliases_cover_released_source_images(self):
-        adapter = ROOT / "benchmark/run_dreammatcher_custom_diffusion_vico.py"
+        adapter = ROOT / "benchmark/dreammatcher_vico_common.py"
         aliases = assignment_literal(adapter, "CONCEPT_INPUT_NAMES")
         source_map = json.loads((ROOT / "models/DreamMatcher/inputs/imgs_source.txt").read_text())
         self.assertEqual(len(aliases), 16)
@@ -36,6 +36,14 @@ class PersonalizationAdapterTests(unittest.TestCase):
             source = (ROOT / relative).read_text()
             self.assertIn('default="0,1,2,3,4"', source)
             self.assertIn('f"seed_{seed:03d}.png"', source)
+
+    def test_custom_diffusion_uses_dreammatcher_compatible_pipeline(self):
+        source = (ROOT / "benchmark/run_custom_diffusion_vico.py").read_text()
+        self.assertIn("from dreammatcher.diffuser_utils import CustomDiffusionPipeline", source)
+        self.assertIn("from diffusers import DDIMScheduler", source)
+        self.assertIn("regiter_attention_editor_diffusers(pipe, AttentionBase())", source)
+        self.assertIn("[ref_prompt, prompt]", source)
+        self.assertNotIn("from src.diffusers_model_pipeline import CustomDiffusionPipeline", source)
 
     def test_launchers_use_shared_evaluator_with_five_images(self):
         for relative in (

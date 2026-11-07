@@ -133,8 +133,10 @@ Normalized images use this layout:
 
 - **CSD-VAR:** one deterministic ViCo reference, one learned representation
   per subject, then five separate upstream inference processes with seeds 0–4.
-- **Custom Diffusion:** released ViCo `delta.bin`, SD v1.4, 200 inference
-  steps, CFG 6, and `eta=1`, matching its official inference defaults.
+- **Custom Diffusion:** released ViCo `delta.bin`, SD v1.4, DreamMatcher's
+  feature-returning Custom Diffusion pipeline, designated source-image DDIM
+  inversion, 50 steps, and CFG 10. It uses DreamMatcher's official baseline
+  path with a no-op attention editor, so appearance matching is disabled.
 - **DreamMatcher + Custom Diffusion:** the same released `delta.bin`, the
   official designated source image, DDIM inversion, foreground appearance
   matching, 50 inference steps, and CFG 10. Only sampling is changed to five
