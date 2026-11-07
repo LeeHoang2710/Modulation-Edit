@@ -67,7 +67,10 @@ def dino_features(paths: list[Path], model, device: torch.device, batch_size: in
         pixels = torch.stack([arbooth_image_tensor(path) for path in group]).to(device)
         features = model(pixels).detach()
         features /= features.clone().norm(dim=-1, keepdim=True)
-        outputs.append(features.cpu())
+        # Some model/device combinations return FP16 features. CPU matrix
+        # multiplication is not implemented for Half in older PyTorch builds.
+        # Cast only after ARBooth-style normalization, preserving the metric.
+        outputs.append(features.float().cpu())
     return torch.cat(outputs, dim=0)
 
 
@@ -78,7 +81,7 @@ def clip_image_features(paths: list[Path], model, preprocess, device: torch.devi
         pixels = torch.stack([arbooth_image_tensor(path) for path in group])
         features = model.encode_image(preprocess(pixels).to(device))
         features /= features.clone().norm(dim=-1, keepdim=True)
-        outputs.append(features.cpu())
+        outputs.append(features.float().cpu())
     return torch.cat(outputs, dim=0)
 
 
@@ -89,7 +92,7 @@ def clip_text_feature(text: str, clip_module, model, device: torch.device) -> to
 
 
 def mean_cross_similarity(left: torch.Tensor, right: torch.Tensor) -> float:
-    return float((left @ right.T).mean().item())
+    return float((left.float() @ right.float().T).mean().item())
 
 
 def select_highest_dino(reference_features: torch.Tensor, generated_features: torch.Tensor) -> int:
@@ -99,7 +102,8 @@ def select_highest_dino(reference_features: torch.Tensor, generated_features: to
     is a per-prompt oracle selection, so it must be reported separately from
     the standard mean-over-eight evaluation.
     """
-    return int((reference_features @ generated_features.T).mean(dim=0).argmax().item())
+    similarities = reference_features.float() @ generated_features.float().T
+    return int(similarities.mean(dim=0).argmax().item())
 
 
 def output_images(prompt_dir: Path) -> list[Path]:
