@@ -57,6 +57,14 @@ class PersonalizationAdapterTests(unittest.TestCase):
             self.assertIn("seed_everything", source)
             self.assertNotIn("from pytorch_lightning", source)
 
+    def test_dreammatcher_inverts_before_registering_attention_editor(self):
+        source = (ROOT / "benchmark/run_dreammatcher_custom_diffusion_vico.py").read_text()
+        inversion = source.index("start_code, latents_list = model.invert(")
+        prompt_loop = source.index("for prompt_index, template in enumerate")
+        registration = source.index("regiter_attention_editor_diffusers(model, editor)")
+        self.assertLess(inversion, prompt_loop)
+        self.assertLess(prompt_loop, registration)
+
     def test_launchers_use_shared_evaluator_with_five_images(self):
         for relative in (
             "scripts/run_custom_diffusion_vico_5seeds.sh",

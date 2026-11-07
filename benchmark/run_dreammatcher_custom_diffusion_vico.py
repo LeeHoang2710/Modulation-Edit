@@ -60,7 +60,7 @@ def main() -> None:
     from diffusers import DDIMScheduler
     from dreammatcher.diffuser_utils import CustomDiffusionPipeline
     from dreammatcher.dreammatcher import MutualSelfAttentionControlMaskAuto_Matching
-    from dreammatcher.dreammatcher_utils import AttentionBase, regiter_attention_editor_diffusers
+    from dreammatcher.dreammatcher_utils import regiter_attention_editor_diffusers
 
     manifest = json.loads((root / args.manifest).read_text())
     subjects = selected_subjects(manifest, args.subjects)
@@ -89,6 +89,17 @@ def main() -> None:
         ).to(device)
         model.load_model(str(delta), False)
         source_image = load_image(source_path, device)
+        # The official order is inversion first, editor registration second.
+        # Inversion is independent of the target prompt and seed, so compute it
+        # once per subject before any attention forward methods are patched.
+        seed_everything(0)
+        start_code, latents_list = model.invert(
+            source_image,
+            "",
+            guidance_scale=args.guidance_scale,
+            num_inference_steps=args.steps,
+            return_intermediates=True,
+        )
         load_seconds = time.monotonic() - load_started
         inference_seconds: list[float] = []
 
@@ -124,15 +135,6 @@ def main() -> None:
                 "save_mask": False,
             }
 
-            regiter_attention_editor_diffusers(model, AttentionBase())
-            seed_everything(0)
-            start_code, latents_list = model.invert(
-                source_image,
-                "",
-                guidance_scale=args.guidance_scale,
-                num_inference_steps=args.steps,
-                return_intermediates=True,
-            )
             prompt_dir = subject_output / f"prompt_{prompt_index:02d}"
             prompt_dir.mkdir(parents=True, exist_ok=False)
             for seed in seeds:
