@@ -13,3 +13,9 @@
 [submodule "models/UnZipLoRA"]
 	path = models/UnZipLoRA
 	url = https://github.com/changLiu77/UnZipLoRA.git
+[submodule "models/Custom-Diffusion"]
+	path = models/Custom-Diffusion
+	url = https://github.com/adobe-research/custom-diffusion.git
+[submodule "models/DreamMatcher"]
+	path = models/DreamMatcher
+	url = https://github.com/cvlab-kaist/DreamMatcher.git
