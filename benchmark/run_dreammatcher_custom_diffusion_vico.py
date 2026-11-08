@@ -30,11 +30,28 @@ def selected_subjects(manifest: dict, selection: str) -> list[dict]:
     return selected
 
 
+def selected_prompts(item: dict, selection_path: str | None, root: Path, max_prompts: int):
+    templates = item["prompt_templates"]
+    if not selection_path:
+        return list(enumerate(templates[: max_prompts or None]))
+    path = Path(selection_path)
+    if not path.is_absolute():
+        path = root / path
+    selection = json.loads(path.read_text())
+    indices = selection.get(item["subject"], [])
+    if not indices:
+        return []
+    if len(indices) != len(set(indices)) or any(not isinstance(index, int) or index < 0 or index >= len(templates) for index in indices):
+        raise ValueError(f"Invalid prompt indices for {item['subject']}: {indices}")
+    return [(index, templates[index]) for index in indices]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", default="benchmark/manifests/vico.json")
     parser.add_argument("--subjects", default="all")
     parser.add_argument("--max-prompts", type=int, default=0)
+    parser.add_argument("--prompt-selection", help="JSON mapping each subject to original zero-based ViCo prompt indices")
     parser.add_argument("--seeds", default="0,1,2,3,4")
     parser.add_argument("--weights", default="weights/custom_diffusion")
     parser.add_argument("--base-model", default="CompVis/stable-diffusion-v1-4")
@@ -103,7 +120,12 @@ def main() -> None:
         load_seconds = time.monotonic() - load_started
         inference_seconds: list[float] = []
 
-        for prompt_index, template in enumerate(item["prompt_templates"][: args.max_prompts or None]):
+        prompts = selected_prompts(item, args.prompt_selection, root, args.max_prompts)
+        if not prompts:
+            del model
+            torch.cuda.empty_cache()
+            continue
+        for prompt_index, template in prompts:
             ref_prompt = f"a photo of a <new1> {subject}"
             gen_prompt = template.format(f"<new1> {subject}")
             ref_token_idx = 6
@@ -137,6 +159,7 @@ def main() -> None:
 
             prompt_dir = subject_output / f"prompt_{prompt_index:02d}"
             prompt_dir.mkdir(parents=True, exist_ok=False)
+            (prompt_dir / "prompt.txt").write_text(template.format(subject.replace("_", " ")) + "\n")
             for seed in seeds:
                 params["seed"] = seed
                 seed_everything(seed)
