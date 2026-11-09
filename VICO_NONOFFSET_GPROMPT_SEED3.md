@@ -95,7 +95,8 @@ bash ablation/06_nonoffset_prompt.sh
 ```
 
 This first learns one new `black_cat` offset, then creates `5 × 1 = 5` images
-for the new variant and evaluates it.
+for the new variant and evaluates DINO, CLIP-I, and CLIP-T. It does not require
+the CSD-VAR evaluator environment.
 
 Completed offsets are reused when resuming an interrupted run. To deliberately
 optimize them again, use:
@@ -124,12 +125,21 @@ output/ablation_vico/21_nonoffset_prompt_reopt_seed3/
 │       ├── offset.pth
 │       └── optimize.log
 ├── test_nonoffset_gprompt/
+│   ├── metrics.csv
+│   └── eval_basic.log
 ├── logs/
-└── summary.csv
+└── ...
 ```
 
-`summary.csv` contains the aggregate metrics for direct comparison. Detailed
-per-image metrics and evaluator logs remain inside each variant directory.
+`test_nonoffset_gprompt/metrics.csv` contains per-subject and aggregate DINO,
+CLIP-I, and CLIP-T. Detailed evaluator output is in `eval_basic.log`.
+
+If all images already exist and only evaluation is needed, run:
+
+```bash
+bash ablation/eval_nonoffset_prompt_basic.sh \
+  output/ablation_vico/21_nonoffset_prompt_reopt_seed3
+```
 
 To use another object for the smoke test:
 

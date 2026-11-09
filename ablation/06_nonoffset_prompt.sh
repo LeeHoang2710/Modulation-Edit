@@ -81,10 +81,9 @@ echo "[generate] G_prompt on scales 1,6-12; inference seed=$INFER_SEED; offsets=
   --progress_desc "non-offset Gprompt (seed 3)" \
   > "$OUT/logs/generation.log" 2>&1
 
-echo "[evaluate] evaluating non-offset G_prompt variant"
-NUM_SAMPLES=1 NUM_PROMPTS="$NUM_PROMPTS" FORCE_EVAL="${FORCE_EVAL:-0}" \
-  bash ablation/eval_vico.sh "$OUT" > "$OUT/logs/evaluation.log" 2>&1
+echo "[evaluate] DINO, CLIP-I, and CLIP-T for non-offset G_prompt variant"
+bash ablation/eval_nonoffset_prompt_basic.sh "$OUT" \
+  > >(tee "$OUT/logs/evaluation.log") 2>&1
 
-cat "$OUT/summary.csv"
 echo "[done] images: $OUT"
-echo "[done] metrics: $OUT/summary.csv"
+echo "[done] metrics: $OUT/test_nonoffset_gprompt/metrics.csv"

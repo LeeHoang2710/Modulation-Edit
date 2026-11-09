@@ -15,7 +15,8 @@ from PIL import Image
 
 
 IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".webp"}
-METRICS = ("dino", "clip_i", "clip_t", "clip_t_cls", "div", "pres", "csd_content", "csd_style")
+FULL_METRICS = ("dino", "clip_i", "clip_t", "clip_t_cls", "div", "pres", "csd_content", "csd_style")
+BASIC_METRICS = ("dino", "clip_i", "clip_t")
 
 
 def image_paths(directory: Path) -> list[Path]:
@@ -55,7 +56,10 @@ def main():
     parser.add_argument("--data_dir", required=True)
     parser.add_argument("--arbooth_root", default="/workspace/ARBooth")
     parser.add_argument("--csd_root", default="/workspace/CSD-VAR")
+    parser.add_argument("--basic-only", action="store_true",
+                        help="compute only DINO, CLIP-I, and CLIP-T; does not import LPIPS or CSD-VAR")
     args = parser.parse_args()
+    metrics = BASIC_METRICS if args.basic_only else FULL_METRICS
 
     result_dir = Path(args.result_dir).resolve()
     data_dir = Path(args.data_dir).resolve()
@@ -66,18 +70,20 @@ def main():
 
     from booth_evaluation.clip_eval import CLIPEvaluator
     from booth_evaluation.dino_eval import DINOEvaluator
-    from booth_evaluation.lpips_eval import LPIPSEvaluator
-    from vis.metrics import CSDEvaluator
+    if not args.basic_only:
+        from booth_evaluation.lpips_eval import LPIPSEvaluator
+        from vis.metrics import CSDEvaluator
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     clip_eval = CLIPEvaluator(device)
     dino_eval = DINOEvaluator(device)
     dino_eval.model = dino_eval.model.to(device).eval()
-    lpips_eval = LPIPSEvaluator(device)
-    csd_eval = CSDEvaluator(
-        device,
-        model_path=str(csd_root / "evaluator/CSD/csd_models/pytorch_model.bin"),
-    )
+    if not args.basic_only:
+        lpips_eval = LPIPSEvaluator(device)
+        csd_eval = CSDEvaluator(
+            device,
+            model_path=str(csd_root / "evaluator/CSD/csd_models/pytorch_model.bin"),
+        )
 
     with (data_dir / "subjects.csv").open() as handle:
         subjects = list(csv.DictReader(handle))
@@ -105,17 +111,7 @@ def main():
                 dino = float(dino_eval.img_to_img_similarity(source_device, generated_device).item())
                 clip_i = float(clip_eval.img_to_img_similarity(source, generated).item())
                 clip_t = float(clip_eval.txt_to_img_similarity(template, generated).item())
-                clip_t_cls = float(clip_eval.txt_to_img_similarity(rendered_class, generated).item())
-                div = float(lpips_eval.compute_pairwise_distance(generated))
-
-            csd_content_values = []
-            csd_style_values = []
-            for target in generated:
-                content, style = csd_eval.calculate_similarities(source, target)
-                csd_content_values.append(content)
-                csd_style_values.append(style)
-
-            prompt_rows.append({
+            row = {
                 "subject": subject,
                 "prompt_index": prompt_index,
                 "prompt": template,
@@ -124,12 +120,19 @@ def main():
                 "dino": dino,
                 "clip_i": clip_i,
                 "clip_t": clip_t,
-                "clip_t_cls": clip_t_cls,
-                "div": div,
-                "pres": "",
-                "csd_content": average(csd_content_values),
-                "csd_style": average(csd_style_values),
-            })
+            }
+            if not args.basic_only:
+                with torch.inference_mode():
+                    row["clip_t_cls"] = float(clip_eval.txt_to_img_similarity(rendered_class, generated).item())
+                    row["div"] = float(lpips_eval.compute_pairwise_distance(generated))
+                csd_content_values = []
+                csd_style_values = []
+                for target in generated:
+                    content, style = csd_eval.calculate_similarities(source, target)
+                    csd_content_values.append(content)
+                    csd_style_values.append(style)
+                row.update(pres="", csd_content=average(csd_content_values), csd_style=average(csd_style_values))
+            prompt_rows.append(row)
 
         if not prompt_rows:
             continue
@@ -142,12 +145,12 @@ def main():
             "subject": subject,
             "class_name": item["class_name"],
             "prompts": item["prompts"],
-            **{metric: average([row[metric] for row in prompt_rows]) for metric in METRICS},
+            **{metric: average([row[metric] for row in prompt_rows]) for metric in metrics},
         }
         subject_rows.append(summary)
         print(
             f"[{subject}] " + " ".join(
-                f"{metric}={summary[metric]:.5f}" for metric in METRICS if summary[metric] != ""
+                f"{metric}={summary[metric]:.5f}" for metric in metrics if summary[metric] != ""
             ),
             flush=True,
         )
@@ -168,18 +171,18 @@ def main():
             "subject": f"[{group}] ({len(rows)} subjects)",
             "class_name": "",
             "prompts": "",
-            **{metric: average([row[metric] for row in rows]) for metric in METRICS},
+            **{metric: average([row[metric] for row in rows]) for metric in metrics},
         })
 
     write_csv(
         result_dir / "metrics.csv",
         subject_rows + aggregate_rows,
-        ["subject", "class_name", "prompts", *METRICS],
+        ["subject", "class_name", "prompts", *metrics],
     )
     overall = aggregate_rows[0]
     print(
         "[overall] " + " ".join(
-            f"{metric}={overall[metric]:.5f}" for metric in METRICS if overall[metric] != ""
+            f"{metric}={overall[metric]:.5f}" for metric in metrics if overall[metric] != ""
         ),
         flush=True,
     )

@@ -57,6 +57,7 @@ pip=(.venv/bin/python -m pip install -q)
 "${pip[@]}" torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
 "${pip[@]}" "$FLASH_ATTN_WHL"   # prebuilt (torch2.5, cxx11abi=False like the PyPI torch wheel); `pip install flash_attn` would compile for ~1h
 "${pip[@]}" -r requirements.txt huggingface_hub   # torch / flash_attn pins are already satisfied, so nothing is rebuilt
+"${pip[@]}" 'git+https://github.com/openai/CLIP.git'  # DINO/CLIP-only evaluation in the Infinity environment
 # opencv-python needs libGL, which this container lacks; the headless build provides the same cv2 module
 .venv/bin/python -m pip uninstall -q -y opencv-python
 "${pip[@]}" --force-reinstall --no-cache-dir opencv-python-headless==4.10.0.84
