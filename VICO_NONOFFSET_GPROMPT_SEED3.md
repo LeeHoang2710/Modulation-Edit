@@ -1,12 +1,11 @@
 # Non-offset `G_subject` vs `G_prompt` — seed 3
 
-This experiment leaves the main variant untouched and compares exactly two
-inference variants using the same learned offset, prompts, CA-KV, and random
-seed (`3`).
+This experiment generates only the new `G_prompt` variant. It does not rerun
+the existing `G_subject` baseline images.
 
 ## Formulas
 
-The main variant is:
+The existing main variant, shown only for reference, is:
 
 \[
 G_s=
@@ -16,7 +15,7 @@ G_{\mathrm{subj}},&s\in\{1,6,\ldots,12\}.
 \end{cases}
 \]
 
-The new test variant is:
+The runner generates only this new test variant:
 
 \[
 G_s=
@@ -26,11 +25,10 @@ G_{\mathrm{prompt}},&s\in\{1,6,\ldots,12\}.
 \end{cases}
 \]
 
-For both variants, `beta=1.0`, prompt CA-KV is active at all 13 scales, and
+For the test variant, `beta=1.0`, prompt CA-KV is active at all 13 scales, and
 CFG defaults to `1.5`. Before inference, the runner freshly optimizes one
-subject-conditioned offset on scales `0–5` with optimization seed `3`. The
-same resulting offset is then used by both inference variants. Scale 1 is
-learned but deliberately omitted at inference.
+subject-conditioned offset on scales `0–5` with optimization seed `3`. Scale
+1 is learned but deliberately omitted from the injected offset at inference.
 
 Default offset optimization settings are:
 
@@ -96,8 +94,8 @@ NUM_PROMPTS=5 \
 bash ablation/06_nonoffset_prompt.sh
 ```
 
-This first learns one new `black_cat` offset, then creates
-`2 × 5 × 1 = 10` images and evaluates the two variants separately.
+This first learns one new `black_cat` offset, then creates `5 × 1 = 5` images
+for the new variant and evaluates it.
 
 Completed offsets are reused when resuming an interrupted run. To deliberately
 optimize them again, use:
@@ -114,9 +112,8 @@ NUM_PROMPTS=0 \
 bash ablation/06_nonoffset_prompt.sh
 ```
 
-This first learns 16 offsets, one per subject. Each variant then produces
-`16 × 31 = 496` images. Both variants use inference seed 3 and the same
-corresponding subject offset, so the comparison is paired.
+This first learns 16 offsets, one per subject, then produces
+`16 × 31 = 496` images for the new variant using inference seed 3.
 
 ## Outputs
 
@@ -126,7 +123,6 @@ output/ablation_vico/21_nonoffset_prompt_reopt_seed3/
 │   └── <subject>/
 │       ├── offset.pth
 │       └── optimize.log
-├── main_nonoffset_gsubject/
 ├── test_nonoffset_gprompt/
 ├── logs/
 └── summary.csv

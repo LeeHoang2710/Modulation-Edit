@@ -1,11 +1,7 @@
-"""Compare the main subject-base modulation with prompt modulation on non-offset scales.
+"""Run prompt modulation on the scales that do not receive a subject offset.
 
-Both variants use the same subject-conditioned offset on scales 0,2,3,4,5 and
-prompt CA-KV at every scale.  The only changed variable is the AdaLN modulation
-used at scales 1 and 6-12:
-
-  main:           G_subject
-  nonoffset_prompt: G_prompt
+The subject-conditioned offset is used on scales 0,2,3,4,5; prompt AdaLN
+modulation is used on scales 1 and 6-12; prompt CA-KV is used at every scale.
 """
 import argparse
 
@@ -28,22 +24,12 @@ if __name__ == "__main__":
         cfg=float(args.cfg),
         tau=args.tau,
     )
-    variants = [
-        Variant(
-            name="main_nonoffset_gsubject",
-            alpha=0.0,
-            blend="add",
-            blend_scales=args.prompt_only_scales,
-            extra={"nonoffset_modulation": "G_subject"},
-            **shared,
-        ),
-        Variant(
-            name="test_nonoffset_gprompt",
-            alpha=1.0,
-            blend="add",
-            blend_scales=args.prompt_only_scales,
-            extra={"nonoffset_modulation": "G_prompt"},
-            **shared,
-        ),
-    ]
+    variants = [Variant(
+        name="test_nonoffset_gprompt",
+        alpha=1.0,
+        blend="add",
+        blend_scales=args.prompt_only_scales,
+        extra={"nonoffset_modulation": "G_prompt"},
+        **shared,
+    )]
     run(args, variants)

@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Paired one-seed comparison:
-#   main: scales 1,6-12 use G_subject
-#   test: scales 1,6-12 use G_prompt
-# Both use G_subject + D_s on scales 0,2-5, beta=1, prompt CA-KV, CFG=1.5.
+# One-seed test variant: scales 1,6-12 use G_prompt. Scales 0,2-5 use
+# G_subject + D_s with beta=1; prompt CA-KV is active everywhere; CFG=1.5.
 set -euo pipefail
 source "$(dirname "$0")/_env.sh"
 
@@ -64,7 +62,7 @@ for subject in "${selected_subjects[@]}"; do
     > "$offset_dir/optimize.log" 2>&1
 done
 
-echo "[generate] paired inference seed=$INFER_SEED; offsets=$OFFSET_ROOT; output=$OUT"
+echo "[generate] G_prompt on scales 1,6-12; inference seed=$INFER_SEED; offsets=$OFFSET_ROOT; output=$OUT"
 "$PYTHON" ablation/ablation_nonoffset_prompt.py \
   --out_dir "$OUT" \
   --offset_root "$OFFSET_ROOT" \
@@ -80,10 +78,10 @@ echo "[generate] paired inference seed=$INFER_SEED; offsets=$OFFSET_ROOT; output
   --tau "$TAU" \
   --seed "$INFER_SEED" \
   --progress \
-  --progress_desc "Gsubject vs Gprompt (seed 3)" \
+  --progress_desc "non-offset Gprompt (seed 3)" \
   > "$OUT/logs/generation.log" 2>&1
 
-echo "[evaluate] evaluating each variant separately"
+echo "[evaluate] evaluating non-offset G_prompt variant"
 NUM_SAMPLES=1 NUM_PROMPTS="$NUM_PROMPTS" FORCE_EVAL="${FORCE_EVAL:-0}" \
   bash ablation/eval_vico.sh "$OUT" > "$OUT/logs/evaluation.log" 2>&1
 
