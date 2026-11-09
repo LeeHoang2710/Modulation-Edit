@@ -1,4 +1,4 @@
-"""Collect per-subject step-50/100 preparation timing, excluding checkpoint I/O."""
+"""Collect per-subject checkpoint preparation timing, excluding checkpoint I/O."""
 import argparse
 import csv
 import json
@@ -9,24 +9,31 @@ from statistics import mean, pstdev
 parser = argparse.ArgumentParser()
 parser.add_argument("--offset-base", required=True)
 parser.add_argument("--output", required=True)
+parser.add_argument("--steps", default="100", help="comma-separated checkpoint steps")
 args = parser.parse_args()
+steps = [int(value) for value in args.steps.split(",") if value.strip()]
+if not steps:
+    parser.error("--steps must contain at least one step")
 
 base = Path(args.offset_base)
 rows = []
-for timing_path in sorted((base / "step100").glob("*/timing.json")):
+final_step = max(steps)
+for timing_path in sorted((base / f"step{final_step}").glob("*/timing.json")):
     payload = json.loads(timing_path.read_text())
     by_step = {int(item["iters"]): item for item in payload.get("checkpoints", [])}
-    if 50 not in by_step or 100 not in by_step:
-        raise SystemExit(f"missing step-50/100 timing in {timing_path}")
-    rows.append({
+    missing = [step for step in steps if step not in by_step]
+    if missing:
+        raise SystemExit(f"missing checkpoint timing {missing} in {timing_path}")
+    row = {
         "subject": timing_path.parent.name,
-        "step50_preparation_seconds": by_step[50]["preparation_seconds_excluding_checkpoint_io"],
-        "step100_preparation_seconds": by_step[100]["preparation_seconds_excluding_checkpoint_io"],
         "checkpoint_save_seconds_total": payload["checkpoint_save_seconds"],
-    })
+    }
+    for step in steps:
+        row[f"step{step}_preparation_seconds"] = by_step[step]["preparation_seconds_excluding_checkpoint_io"]
+    rows.append(row)
 
 if not rows:
-    raise SystemExit(f"no timing reports under {base / 'step100'}")
+    raise SystemExit(f"no timing reports under {base / f'step{final_step}'}")
 
 subject_rows = list(rows)
 for label, fn in (("[mean]", mean), ("[std]", pstdev)):
@@ -34,11 +41,8 @@ for label, fn in (("[mean]", mean), ("[std]", pstdev)):
         "subject": label,
         **{
             key: fn(float(row[key]) for row in subject_rows)
-            for key in (
-                "step50_preparation_seconds",
-                "step100_preparation_seconds",
-                "checkpoint_save_seconds_total",
-            )
+            for key in [f"step{step}_preparation_seconds" for step in steps]
+            + ["checkpoint_save_seconds_total"]
         },
     })
 
