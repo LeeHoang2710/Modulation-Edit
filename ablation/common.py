@@ -23,6 +23,7 @@ import os
 import os.path as osp
 import sys
 import time
+import math
 from dataclasses import asdict, dataclass, field
 
 from tqdm.auto import tqdm
@@ -258,6 +259,15 @@ def run(args, variants):
             offset = load_offset(v, sub['subject'], s_idx, num_scales, infinity.C, device)
             if v.base_text == 'subject':  # the NULL row of sos / gss (base, head, add's G_null) -> T5(subject name)
                 b_sos, b_gss, _ = encode_texts(infinity, args.null_len, t5[subject_name(sub['subject'])])
+            subject_dir = osp.join(vdir, sub['subject'])
+            timing_path = osp.join(subject_dir, 'timing.json')
+            timing_records = []
+            if osp.isfile(timing_path):
+                try:
+                    with open(timing_path) as f:
+                        timing_records = json.load(f).get('images', [])
+                except (OSError, ValueError):
+                    timing_records = []
             stt, made = time.time(), 0
             for p_idx, prompt in enumerate(sub['prompts']):
                 pdir = osp.join(vdir, sub['subject'], f'prompt_{p_idx:02d}')
@@ -275,13 +285,36 @@ def run(args, variants):
                 for start in range(0, args.num_samples, args.batch):
                     n = min(args.batch, args.num_samples - start)
                     # the same seed for a (prompt, batch) in every variant -> paired comparisons
+                    infer_started = time.perf_counter()
                     imgs = sample(infinity, vae, texts, offset, v, scale_schedule, n, args.seed + 1000 * p_idx + start, args)
+                    batch_latency_seconds = time.perf_counter() - infer_started
+                    seconds_per_image = batch_latency_seconds / n
                     for i, img in enumerate(imgs):
                         cv2.imwrite(osp.join(pdir, f'{start + i:02d}.jpg'), img)
+                        timing_records.append({
+                            'prompt_index': p_idx,
+                            'image_index': start + i,
+                            'seed': args.seed + 1000 * p_idx + start,
+                            'inference_seconds': seconds_per_image,
+                            'batch_latency_seconds': batch_latency_seconds,
+                            'batch_size': n,
+                        })
                     made += n
                     if progress is not None:
                         progress.update(n)
             if made:
+                values = [float(item['inference_seconds']) for item in timing_records]
+                avg = sum(values) / len(values)
+                std = math.sqrt(sum((value - avg) ** 2 for value in values) / len(values))
+                os.makedirs(subject_dir, exist_ok=True)
+                with open(timing_path, 'w') as f:
+                    json.dump({
+                        'variant': v.name,
+                        'subject': sub['subject'],
+                        'images': timing_records,
+                        'inference_seconds_per_image_mean': avg,
+                        'inference_seconds_per_image_std': std,
+                    }, f, indent=2)
                 print(f'   [{v.name}] {sub["subject"]}: {made} images, {(time.time() - stt) / made:.2f}s/img', flush=True)
     if progress is not None:
         progress.close()

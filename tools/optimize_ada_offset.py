@@ -20,6 +20,8 @@ import os.path as osp
 import sys
 import glob
 import time
+PROGRAM_START = time.perf_counter()
+import json
 import argparse
 from types import SimpleNamespace
 
@@ -212,7 +214,13 @@ def optimize(args, infinity, vae, device, train_cond=None):
     print(f'[offset] trainable params: {offset.numel()} (shape {tuple(offset.shape)}), backbone frozen: {sum(p.requires_grad for p in infinity.parameters()) == 1}, '
           f'batch_size={args.batch_size} x grad_accum={args.grad_accum}')
 
+    checkpoint_save_seconds = 0.0
+    checkpoint_timings = []
+
     def save_offset(path, iters_done):
+        nonlocal checkpoint_save_seconds
+        preparation_before_save = time.perf_counter() - PROGRAM_START - checkpoint_save_seconds
+        save_started = time.perf_counter()
         os.makedirs(osp.dirname(osp.abspath(path)), exist_ok=True)
         torch.save({
             'ada_offset': offset.detach().cpu(), 'offset_mode': args.offset_mode, 'null_len': args.null_len, 'pn': args.pn, 'h_div_w_template': h_div_w_template,
@@ -220,6 +228,14 @@ def optimize(args, infinity, vae, device, train_cond=None):
             'iters': iters_done, 'lr': args.lr, 'seed': args.seed, 'hflip': args.hflip, 'log': list(log),
             'offset_init': args.offset_init, 'init_std': args.init_std, 'train_prompt': args.train_prompt,
         }, path)
+        save_seconds = time.perf_counter() - save_started
+        checkpoint_save_seconds += save_seconds
+        checkpoint_timings.append({
+            'iters': iters_done,
+            'path': osp.abspath(path),
+            'preparation_seconds_excluding_checkpoint_io': preparation_before_save,
+            'checkpoint_save_seconds': save_seconds,
+        })
         print(f'[saved] offset (it {iters_done}) -> {path}')
 
     def text_cond(B):  # the training condition: --train_prompt or the null text
@@ -270,6 +286,17 @@ def optimize(args, infinity, vae, device, train_cond=None):
 
     if args.save_offset:
         save_offset(args.save_offset, args.iters)
+
+    if args.timing_file:
+        total_wall_seconds = time.perf_counter() - PROGRAM_START
+        os.makedirs(osp.dirname(osp.abspath(args.timing_file)), exist_ok=True)
+        with open(args.timing_file, 'w') as f:
+            json.dump({
+                'total_wall_seconds': total_wall_seconds,
+                'checkpoint_save_seconds': checkpoint_save_seconds,
+                'preparation_seconds_excluding_checkpoint_io': total_wall_seconds - checkpoint_save_seconds,
+                'checkpoints': checkpoint_timings,
+            }, f, indent=2)
 
     if args.save_file:
         set_offset_infer_scales(infinity, args.offset_infer_scales, len(scale_schedule))
@@ -359,6 +386,7 @@ if __name__ == '__main__':
     parser.add_argument('--sample_every', type=int, default=0, help='also sample every N steps to <save_file stem>_progress/ (0 = only at the end)')
     parser.add_argument('--save_offset', type=str, default='./ada_offset.pth')
     parser.add_argument('--save_offset_every', type=int, default=0, help='also save the offset every N steps to <save_offset stem>_itXXXXX.pth (0 = only at the end)')
+    parser.add_argument('--timing_file', type=str, default='', help='optional JSON timing report; preparation time excludes checkpoint writes')
     parser.add_argument('--offset_path', type=str, default='', help='learned offset (infer mode)')
     parser.add_argument('--offset_scale', type=str, default='1', help="multiply the learned offset at inference; comma-separated sweep, e.g. '0.1,0.3,0.5' (one row each)")
     parser.add_argument('--base_scale', type=str, default='1', help="infer mode: G is scaled by it where the offset is applied (base_scale * G + offset); comma-separated sweep")
