@@ -27,9 +27,24 @@ G_{\mathrm{prompt}},&s\in\{1,6,\ldots,12\}.
 \]
 
 For both variants, `beta=1.0`, prompt CA-KV is active at all 13 scales, and
-CFG defaults to `1.5`. The offsets must have been optimized on scales `0–5`
-using the subject/class text. Scale 1 is learned but deliberately omitted at
-inference.
+CFG defaults to `1.5`. Before inference, the runner freshly optimizes one
+subject-conditioned offset on scales `0–5` with optimization seed `3`. The
+same resulting offset is then used by both inference variants. Scale 1 is
+learned but deliberately omitted at inference.
+
+Default offset optimization settings are:
+
+```text
+optimization seed: 3
+steps:             200
+batch size:        2
+gradient accum.:   2
+learning rate:     5e-3
+loss scales:       0-5
+training text:     subject/class name
+augmentation:      disabled
+bit correction:    13 layers, strength 0.3
+```
 
 ## 1. Clone or update the correct branch
 
@@ -73,38 +88,44 @@ Wait until it prints:
 [ready] The beta-then-alpha ViCo pipeline is fully prepared.
 ```
 
-If the subject-conditioned `0–5` offsets already exist, no optimization is
-repeated.
-
 ## 3. Smoke test: one object, five prompts
 
-Change `OFFSET_ROOT` if your offsets are stored elsewhere:
-
 ```bash
-OFFSET_ROOT=output/ablation_vico/offsets/ls0-5_subjtext_it200_bsc_noaug \
 SUBJECTS=black_cat \
 NUM_PROMPTS=5 \
 bash ablation/06_nonoffset_prompt.sh
 ```
 
-This creates `2 × 5 × 1 = 10` images and evaluates the two variants
-separately.
+This first learns one new `black_cat` offset, then creates
+`2 × 5 × 1 = 10` images and evaluates the two variants separately.
+
+Completed offsets are reused when resuming an interrupted run. To deliberately
+optimize them again, use:
+
+```bash
+FORCE_OPTIMIZE=1 SUBJECTS=black_cat NUM_PROMPTS=5 \
+bash ablation/06_nonoffset_prompt.sh
+```
 
 ## 4. Full comparison: 16 objects × 31 prompts × one seed
 
 ```bash
-OFFSET_ROOT=output/ablation_vico/offsets/ls0-5_subjtext_it200_bsc_noaug \
 NUM_PROMPTS=0 \
 bash ablation/06_nonoffset_prompt.sh
 ```
 
-Each variant produces `16 × 31 = 496` images. Both use inference seed 3, so
-the comparison is paired.
+This first learns 16 offsets, one per subject. Each variant then produces
+`16 × 31 = 496` images. Both variants use inference seed 3 and the same
+corresponding subject offset, so the comparison is paired.
 
 ## Outputs
 
 ```text
-output/ablation_vico/21_nonoffset_prompt_seed3/
+output/ablation_vico/21_nonoffset_prompt_reopt_seed3/
+├── offsets_seed3_ls0-5_subjtext/
+│   └── <subject>/
+│       ├── offset.pth
+│       └── optimize.log
 ├── main_nonoffset_gsubject/
 ├── test_nonoffset_gprompt/
 ├── logs/
@@ -118,6 +139,13 @@ To use another object for the smoke test:
 
 ```bash
 SUBJECTS=cat_statue NUM_PROMPTS=5 \
-OFFSET_ROOT=/path/to/offset/root \
+bash ablation/06_nonoffset_prompt.sh
+```
+
+To change optimization settings explicitly:
+
+```bash
+SUBJECTS=cat_statue NUM_PROMPTS=5 \
+OPT_SEED=3 ITERS=200 BATCH_SIZE=2 GRAD_ACCUM=2 LR=5e-3 \
 bash ablation/06_nonoffset_prompt.sh
 ```
