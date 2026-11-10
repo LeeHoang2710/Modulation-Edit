@@ -57,17 +57,19 @@ outputs/style_single_scale_dog/style_scale_placement_comparison.png
 
 ## Experiment 2: reconstruction scale-prefix sweep
 
-This re-optimizes fresh subject-conditioned offsets for `black_cat` and
-`fat_dog` using scale prefixes `0-3`, `0-4`, ..., `0-12`:
+This trains one subject-conditioned offset on scales `0-3` for `black_cat`
+(`a grey cat`) and `fat_dog` (`a fat dog`), then tests ten injection sets:
+
+`0`, `1`, `2`, `3`, `0+1`, `0+1+2`, `0+1+2+3`, `0+2+3`, `1+2+3`, and `2+3`.
 
 ```bash
 PYTHON_BIN=.venv/bin/python bash scripts/run_scale_reconstruction_ablation.sh
 ```
 
-The default settings are 200 optimization steps, batch size 2, gradient
+The friend main-variant settings are 200 optimization steps, batch size 2, gradient
 accumulation 2, BSC noise on up to 13 history layers with maximum bit-flip
-strength `0.3`, learning rate `5e-3`, and subject prompts `a black cat` and
-`a fat dog`. The effective BSC layer count is clamped to the available prefix.
+strength `0.3`, learning rate `5e-3`, subject prompts `a grey cat` and
+`a fat dog`, offset strength `beta=0.9`, prompt cross-attention, and CFG 1.5.
 To run one object
 or use a longer optimization:
 
