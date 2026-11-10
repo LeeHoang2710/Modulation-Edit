@@ -83,8 +83,8 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--pn", default="1M")
-    parser.add_argument("--model-path", default="weights/infinity_2b_reg.pth")
-    parser.add_argument("--vae-path", default="weights/infinity_vae_d32reg.pth")
+    parser.add_argument("--model-path", default="weights/infinity/infinity_2b_reg.pth")
+    parser.add_argument("--vae-path", default="weights/infinity/infinity_vae_d32reg.pth")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[1]

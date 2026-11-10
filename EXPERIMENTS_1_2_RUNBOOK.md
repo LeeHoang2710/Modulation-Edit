@@ -10,11 +10,9 @@ cd Modulation-Edit
 Install or activate the project environment and make sure these assets exist:
 
 ```text
-weights/infinity/infinity_2b_reg.pth       # Experiment 1 default
+weights/infinity/infinity_2b_reg.pth
 weights/infinity/infinity_vae_d32reg.pth
 weights/infinity/flan-t5-xl/
-weights/infinity_2b_reg.pth                # Experiment 2 default
-weights/infinity_vae_d32reg.pth
 ```
 
 The scripts default to `.venv/bin/python`. Override it with `PYTHON_BIN` if the
