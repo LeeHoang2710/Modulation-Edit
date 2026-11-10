@@ -28,6 +28,8 @@ def main() -> None:
         "--offset-scales", default="0",
         help="scales receiving the learned style offset: '', '0', '1', or '0-1'",
     )
+    parser.add_argument("--top_k", type=int, default=900)
+    parser.add_argument("--top_p", type=float, default=0.97)
     args = parser.parse_args()
     if args.num_samples < 1:
         parser.error("--num-samples must be positive")
