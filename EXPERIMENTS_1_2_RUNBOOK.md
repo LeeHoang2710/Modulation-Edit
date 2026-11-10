@@ -23,7 +23,7 @@ Vast.ai environment uses another Python executable.
 ## Experiment 1: style offset placement
 
 This uses the eight committed style images in `styles/` and fits one per-scale
-offset per style image on scales 0–4. It then generates four variants for the
+offset per style image on scales 0–5. It then generates four variants for the
 prompt `a dog`:
 
 1. no style injection;

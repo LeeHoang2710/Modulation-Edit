@@ -3,7 +3,7 @@
 
 For each ``styles/*.png`` image this runner:
 
-1. optimizes a per-scale AdaLN offset using only training scales 0--4;
+    1. optimizes a per-scale AdaLN offset using only training scales 0--5;
 2. injects the learned style offset using four scale-placement variants:
    no injection, scale 0, scale 1, and scales 0+1;
 3. generates ``a dog`` with the normal prompt conditioning (prompt CA and
@@ -114,7 +114,7 @@ def main() -> None:
                 "--images", str(style_path), *common, "--seed", str(args.seed), "--hflip", "0",
                 "--grad_checkpointing", "1", "--offset_mode", "per_scale", "--iters", str(args.steps),
                 "--batch_size", str(args.batch_size), "--grad_accum", str(args.grad_accum), "--lr", str(args.lr),
-                "--loss_scales", "0-4", "--offset_infer_scales", "0-4", "--num_samples", "1",
+                "--loss_scales", "0-5", "--offset_infer_scales", "0-5", "--num_samples", "1",
                 "--sample_every", "0", "--save_offset", str(offset_path),
                 "--save_file", str(work_root / name / "reconstruction.jpg"),
             ], root)
@@ -131,13 +131,13 @@ def main() -> None:
             "style": name, "style_path": str(style_path), "offset_path": str(offset_path),
             "outputs": {variant: str(path) for variant, path in result_paths.items()},
             "preparation_seconds": preparation_seconds,
-            "trained_scales": "0-4", "variants": {name: scales for name, scales in variants.items()},
+            "trained_scales": "0-5", "variants": {name: scales for name, scales in variants.items()},
             "prompt": args.prompt,
         })
         print(f"[done] style={name} outputs={list(result_paths.values())}", flush=True)
 
     (output_root / "run.json").write_text(json.dumps({
-        "prompt": args.prompt, "styles": records, "trained_scales": [0, 1, 2, 3, 4],
+        "prompt": args.prompt, "styles": records, "trained_scales": [0, 1, 2, 3, 4, 5],
         "variants": {"none": [], "scale0": [0], "scale1": [1], "scale0_1": [0, 1]},
         "num_styles": len(records),
     }, indent=2) + "\n")

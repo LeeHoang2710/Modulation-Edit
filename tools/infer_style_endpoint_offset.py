@@ -31,7 +31,7 @@ def main() -> None:
     args = parser.parse_args()
     if args.num_samples < 1:
         parser.error("--num-samples must be positive")
-    offset_scales = set(parse_scales(args.offset_scales, 5)) if args.offset_scales else set()
+    offset_scales = set(parse_scales(args.offset_scales, 6)) if args.offset_scales else set()
 
     checkpoint = torch.load(args.offset_path, map_location="cpu")
     vae = load_visual_tokenizer(args)
@@ -42,15 +42,15 @@ def main() -> None:
     tokenizer, encoder = load_tokenizer(t5_path=args.text_encoder_ckpt)
 
     offset = checkpoint["ada_offset"].reshape(-1, 1, 6, infinity.C).cuda().float()
-    if offset.shape[0] < 5:
-        raise ValueError(f"Expected a 0-4 per-scale checkpoint, got {tuple(offset.shape)}")
-    if set(checkpoint.get("loss_scales", [])) != {0, 1, 2, 3, 4}:
-        raise ValueError(f"Checkpoint was not trained on exactly scales 0-4: {checkpoint.get('loss_scales')}")
+    if offset.shape[0] < 6:
+        raise ValueError(f"Expected a 0-5 per-scale checkpoint, got {tuple(offset.shape)}")
+    if set(checkpoint.get("loss_scales", [])) != {0, 1, 2, 3, 4, 5}:
+        raise ValueError(f"Checkpoint was not trained on exactly scales 0-5: {checkpoint.get('loss_scales')}")
     null_len = int(checkpoint.get("null_len", 32))
     h_div_w = checkpoint.get("h_div_w_template", 1.0)
     _, scale_schedule, _ = get_scale_schedule(args, h_div_w)
-    if len(scale_schedule) <= 4:
-        raise ValueError("The selected resolution does not contain scale 4")
+    if len(scale_schedule) <= 5:
+        raise ValueError("The selected resolution does not contain scale 5")
 
     prompt_cond = encode_prompt(tokenizer, encoder, args.prompt)
     texts = encode_texts(infinity, null_len, prompt_cond)
