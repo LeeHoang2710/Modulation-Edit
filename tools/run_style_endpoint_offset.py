@@ -57,7 +57,7 @@ def main() -> None:
     parser.add_argument("--prompt", default="a dog")
     parser.add_argument("--output-dir", default="outputs/style_endpoint_dog")
     parser.add_argument("--work-dir", default="benchmark_work/style_endpoint_dog")
-    parser.add_argument("--steps", type=int, default=50)
+    parser.add_argument("--steps", type=int, default=200)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--grad-accum", type=int, default=1)
     parser.add_argument("--lr", type=float, default=4e-3)

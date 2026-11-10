@@ -13,7 +13,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
 PROMPT="${PROMPT:-a dog}"
-STEPS="${STEPS:-50}"
+STEPS="${STEPS:-200}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 GRAD_ACCUM="${GRAD_ACCUM:-1}"
 LR="${LR:-4e-3}"
