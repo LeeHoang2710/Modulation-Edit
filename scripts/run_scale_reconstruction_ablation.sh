@@ -11,7 +11,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"
-STEPS="${STEPS:-100}"
+STEPS="${STEPS:-200}"
 SUBJECTS="${SUBJECTS:-black_cat,fat_dog}"
 ENDPOINTS="${ENDPOINTS:-3,4,5,6,7,8,9,10,11,12}"
 
