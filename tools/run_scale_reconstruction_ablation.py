@@ -80,6 +80,8 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--grad-accum", type=int, default=2)
     parser.add_argument("--lr", type=float, default=5e-3)
+    parser.add_argument("--noise-apply-layers", type=int, default=13)
+    parser.add_argument("--noise-apply-strength", type=float, default=0.3)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--pn", default="1M")
@@ -132,7 +134,9 @@ def main() -> None:
                 "--seed", str(args.seed), "--hflip", "0", "--grad_checkpointing", "1",
                 "--offset_mode", "per_scale", "--iters", str(args.steps),
                 "--batch_size", str(args.batch_size), "--grad_accum", str(args.grad_accum),
-                "--lr", str(args.lr), "--loss_scales", f"0-{endpoint}",
+                "--lr", str(args.lr), "--noise_apply_layers", str(args.noise_apply_layers),
+                "--noise_apply_strength", str(args.noise_apply_strength),
+                "--loss_scales", f"0-{endpoint}",
                 "--offset_infer_scales", f"0-{endpoint}", "--train_prompt", SUBJECTS[subject],
                 "--num_samples", "1", "--sample_every", "0",
                 "--save_offset", str(offset_path), "--save_file", str(reconstruction),

@@ -59,8 +59,10 @@ def main() -> None:
     parser.add_argument("--work-dir", default="benchmark_work/style_endpoint_dog")
     parser.add_argument("--steps", type=int, default=200)
     parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--grad-accum", type=int, default=1)
+    parser.add_argument("--grad-accum", type=int, default=2)
     parser.add_argument("--lr", type=float, default=4e-3)
+    parser.add_argument("--noise-apply-layers", type=int, default=13)
+    parser.add_argument("--noise-apply-strength", type=float, default=0.3)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--num-samples", type=int, default=1)
     parser.add_argument("--pn", default="1M")
@@ -114,6 +116,8 @@ def main() -> None:
                 "--images", str(style_path), *common, "--seed", str(args.seed), "--hflip", "0",
                 "--grad_checkpointing", "1", "--offset_mode", "per_scale", "--iters", str(args.steps),
                 "--batch_size", str(args.batch_size), "--grad_accum", str(args.grad_accum), "--lr", str(args.lr),
+                "--noise_apply_layers", str(args.noise_apply_layers),
+                "--noise_apply_strength", str(args.noise_apply_strength),
                 "--loss_scales", "0-5", "--offset_infer_scales", "0-5", "--num_samples", "1",
                 "--sample_every", "0", "--save_offset", str(offset_path),
                 "--save_file", str(work_root / name / "reconstruction.jpg"),

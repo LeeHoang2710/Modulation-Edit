@@ -42,7 +42,8 @@ PROMPT='a dog' STEPS=200 GRAD_ACCUM=2 NUM_SAMPLES=1 \
   PYTHON_BIN=.venv/bin/python bash scripts/run_style_endpoint_offsets.sh
 ```
 
-The default optimization uses batch size 1 and gradient accumulation 2.
+The default optimization uses batch size 1, gradient accumulation 2, BSC
+noise on up to 13 history layers, and maximum bit-flip strength `0.3`.
 
 Outputs:
 
@@ -64,8 +65,10 @@ PYTHON_BIN=.venv/bin/python bash scripts/run_scale_reconstruction_ablation.sh
 ```
 
 The default settings are 200 optimization steps, batch size 2, gradient
-accumulation 2, learning rate `5e-3`, and subject prompts `a black cat` and
-`a fat dog`. To run one object
+accumulation 2, BSC noise on up to 13 history layers with maximum bit-flip
+strength `0.3`, learning rate `5e-3`, and subject prompts `a black cat` and
+`a fat dog`. The effective BSC layer count is clamped to the available prefix.
+To run one object
 or use a longer optimization:
 
 ```bash

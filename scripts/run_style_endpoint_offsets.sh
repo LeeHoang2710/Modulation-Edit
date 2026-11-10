@@ -17,6 +17,8 @@ STEPS="${STEPS:-200}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 GRAD_ACCUM="${GRAD_ACCUM:-2}"
 LR="${LR:-4e-3}"
+BSC_LAYERS="${BSC_LAYERS:-13}"
+BSC_STRENGTH="${BSC_STRENGTH:-0.3}"
 SEED="${SEED:-0}"
 NUM_SAMPLES="${NUM_SAMPLES:-1}"
 OUTPUT_DIR="${OUTPUT_DIR:-outputs/style_single_scale_dog}"
@@ -31,5 +33,7 @@ WORK_DIR="${WORK_DIR:-benchmark_work/style_endpoint_dog}"
   --batch-size "${BATCH_SIZE}" \
   --grad-accum "${GRAD_ACCUM}" \
   --lr "${LR}" \
+  --noise-apply-layers "${BSC_LAYERS}" \
+  --noise-apply-strength "${BSC_STRENGTH}" \
   --seed "${SEED}" \
   --num-samples "${NUM_SAMPLES}"
