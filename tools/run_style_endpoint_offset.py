@@ -89,6 +89,7 @@ def main() -> None:
     common = [
         "--pn", args.pn, "--model_type", "infinity_2b", "--model_path", str((root / args.model_path).resolve()),
         "--vae_type", "32", "--vae_path", str((root / args.vae_path).resolve()),
+        "--text_encoder_ckpt", str((root / args.text_encoder_ckpt).resolve()),
         "--add_lvl_embeding_only_first_block", "1", "--use_bit_label", "1",
         "--rope2d_each_sa_layer", "1", "--rope2d_normalized_by_hw", "2",
         "--use_scale_schedule_embedding", "0", "--apply_spatial_patchify", "0",
