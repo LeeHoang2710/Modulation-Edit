@@ -31,11 +31,10 @@ class AdapterTests(unittest.TestCase):
             self.assertEqual(json.loads(prompts.read_text())["content"]["recontextualization"], ["a {} dog in snow"])
             source = root / "raw/example/output/ours/prompt_0_content_recontextualization"
             source.mkdir(parents=True)
-            for i in range(2):
-                (source / f"{i}.png").write_bytes(str(i).encode())
+            (source / "0.png").write_bytes(b"sample")
             target = root / "output"
             adapter.normalize_outputs(root / "raw", target, 1, 2)
-            self.assertEqual((target / "prompt_00/seed_001.png").read_bytes(), b"1")
+            self.assertEqual((target / "prompt_00/seed_002.png").read_bytes(), b"sample")
             with self.assertRaises(RuntimeError):
                 adapter.normalize_outputs(root / "raw", target, 1, 2)
 
@@ -51,7 +50,7 @@ class AdapterTests(unittest.TestCase):
         self.assertIn("learned_embeds_2-steps-150_style.safetensors", names)
         self.assertEqual(len(names), 5)
 
-    def test_one_training_and_eight_samples_per_prompt(self):
+    def test_one_training_and_five_independent_seed_runs(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             ref = root / "ref.jpg"
@@ -60,6 +59,9 @@ class AdapterTests(unittest.TestCase):
                     "prompt_templates": ["a {} in snow", "a {} on grass"]}
             manifest = root / "manifest.json"
             manifest.write_text(json.dumps({"subjects": [item]}))
+            model = root / "models/CSD-VAR"
+            model.mkdir(parents=True)
+            (model / "train.py").touch()
             work, output = root / "work", root / "outputs"
             calls = []
 
@@ -75,25 +77,35 @@ class AdapterTests(unittest.TestCase):
                     for path in adapter.checkpoint_files(checkpoint, 150):
                         path.touch()
                 elif "inference.py" in command:
-                    self.assertEqual(command[command.index("--images_per_prompt") + 1], "8")
-                    self.assertEqual(command[command.index("--seed") + 1], "42")
+                    self.assertEqual(command[command.index("--images_per_prompt") + 1], "1")
+                    seed = int(command[command.index("--seed") + 1])
+                    self.assertIn(seed, range(5))
                     for prompt in range(2):
-                        dst = work / f"dog/raw/run/output/ours/prompt_{prompt}_content_recontextualization"
+                        dst = work / f"dog/raw/seed_{seed:03d}/run/output/ours/prompt_{prompt}_content_recontextualization"
                         dst.mkdir(parents=True)
-                        for i in range(8):
-                            (dst / f"{i}.png").write_bytes(b"png")
+                        (dst / "0.png").write_bytes(b"png")
 
             argv = ["run_csd_var_vico.py", "--manifest", str(manifest), "--output", str(output),
                     "--work-dir", str(work)]
-            with mock.patch.object(adapter.sys, "argv", argv), mock.patch.object(adapter, "run", side_effect=fake_run):
+            fake_module = root / "benchmark/run_csd_var_vico.py"
+            with mock.patch.object(adapter.sys, "argv", argv), \
+                    mock.patch.object(adapter, "__file__", str(fake_module)), \
+                    mock.patch.object(adapter, "run", side_effect=fake_run):
                 adapter.main()
             self.assertEqual(sum("train.py" in call for call in calls), 1)
-            self.assertEqual(sum("inference.py" in call for call in calls), 1)
+            self.assertEqual(sum("inference.py" in call for call in calls), 5)
             for prompt in range(2):
-                self.assertEqual(len(list((output / f"dog/prompt_{prompt:02d}").glob("seed_*.png"))), 8)
+                self.assertEqual(len(list((output / f"dog/prompt_{prompt:02d}").glob("seed_*.png"))), 5)
             timing = json.loads((output / "dog/timing.json").read_text())
-            self.assertEqual(timing["seed"], 42)
-            self.assertIsNone(timing["inference_seconds_per_image"])
+            self.assertEqual(timing["inference_seeds"], list(range(5)))
+            self.assertEqual(timing["sampling"], "independent upstream inference seeds")
+            self.assertGreaterEqual(timing["inference_seconds_per_image"], 0)
+
+    def test_parse_seeds(self):
+        self.assertEqual(adapter.parse_seeds("0, 2,4"), [0, 2, 4])
+        for invalid in ("", "0,0", "-1"):
+            with self.assertRaises(ValueError):
+                adapter.parse_seeds(invalid)
 
 
 if __name__ == "__main__":

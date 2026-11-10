@@ -85,23 +85,30 @@ def checkpoint_files(directory: Path, step: int) -> list[Path]:
     return [directory / name for name in names]
 
 
-def normalize_outputs(raw: Path, target: Path, n_prompts: int, n_images: int) -> None:
+def normalize_outputs(raw: Path, target: Path, n_prompts: int, output_seed: int) -> None:
+    """Normalize one independently seeded upstream inference run."""
     runs = sorted(path for path in raw.iterdir() if path.is_dir())
     if len(runs) != 1:
         raise RuntimeError(f"Expected exactly one upstream inference run in {raw}; found {len(runs)}")
     output = runs[0] / "output" / "ours"
     for index in range(n_prompts):
         source = output / f"prompt_{index}_content_recontextualization"
-        files = [source / f"{i}.png" for i in range(n_images)]
-        if not all(path.is_file() for path in files):
-            raise RuntimeError(f"Missing generated samples in {source}")
+        file = source / "0.png"
+        if not file.is_file():
+            raise RuntimeError(f"Missing independently seeded sample: {file}")
         destination = target / f"prompt_{index:02d}"
         destination.mkdir(parents=True, exist_ok=True)
-        old = list(destination.glob("seed_*.png"))
-        if old:
-            raise RuntimeError(f"Outputs already exist in {destination}; select a fresh --output directory")
-        for i, file in enumerate(files):
-            shutil.copy2(file, destination / f"seed_{i:03d}.png")
+        target_file = destination / f"seed_{output_seed:03d}.png"
+        if target_file.exists():
+            raise RuntimeError(f"Output already exists: {target_file}; select a fresh --output directory")
+        shutil.copy2(file, target_file)
+
+
+def parse_seeds(value: str) -> list[int]:
+    seeds = [int(part.strip()) for part in value.split(",") if part.strip()]
+    if not seeds or len(seeds) != len(set(seeds)) or any(seed < 0 for seed in seeds):
+        raise ValueError("--inference-seeds must contain unique non-negative integers")
+    return seeds
 
 
 def main() -> None:
@@ -109,8 +116,10 @@ def main() -> None:
     parser.add_argument("--manifest", default="benchmark/manifests/vico.json")
     parser.add_argument("--subjects", default="all")
     parser.add_argument("--max-prompts", type=int, default=0, help="0 means all ViCo prompts")
-    parser.add_argument("--images-per-prompt", type=int, default=8)
-    parser.add_argument("--seed", type=int, default=42, help="upstream inference RNG seed")
+    parser.add_argument("--images-per-prompt", type=int, default=5,
+                        help="must equal the number of independent inference seeds")
+    parser.add_argument("--inference-seeds", default="0,1,2,3,4",
+                        help="comma-separated independent upstream RNG seeds")
     parser.add_argument("--steps", type=int, default=200)
     parser.add_argument("--checkpoint-step", type=int, default=150)
     parser.add_argument("--save-every", type=int, default=50)
@@ -120,6 +129,12 @@ def main() -> None:
     parser.add_argument("--work-dir", default="benchmark_work/vico_csd_var")
     parser.add_argument("--prepare-only", action="store_true", help="Write inputs only; do not run GPU models")
     args = parser.parse_args()
+    try:
+        inference_seeds = parse_seeds(args.inference_seeds)
+    except ValueError as error:
+        parser.error(str(error))
+    if args.images_per_prompt != len(inference_seeds):
+        parser.error("--images-per-prompt must equal the number of --inference-seeds")
     if args.max_prompts < 0 or args.images_per_prompt < 1 or args.steps < 2 or args.save_every < 1:
         parser.error("Invalid prompt count, image count, steps or save interval")
     if args.checkpoint_step <= 0 or args.checkpoint_step >= args.steps or args.checkpoint_step % args.save_every:
@@ -170,22 +185,30 @@ def main() -> None:
         if missing:
             raise RuntimeError(f"CSD-VAR training did not produce required checkpoint files: {missing}")
         prep_seconds = time.monotonic() - started
-        infer_start = time.monotonic()
-        run([sys.executable, "inference.py", "--prompts_path", str(prompts), "--step", str(args.checkpoint_step),
-             "--content_path_ckpt", str(checkpoint), "--style_path_ckpt", str(checkpoint),
-             "--content_name", cls, "--style_name", "photo", "--output_dir", str(raw),
-             "--images_per_prompt", str(args.images_per_prompt), "--seed", str(args.seed),
-             "--model_path", args.switti, "--prompt_config_path", "config/config_group_scales.yaml",
-             "--proj_path", str(proj), "--proj_2_path", str(proj2)], model)
-        infer_seconds = time.monotonic() - infer_start
         dest = out_root / subject
-        normalize_outputs(raw, dest, n_prompts, args.images_per_prompt)
+        infer_start = time.monotonic()
+        seconds_by_seed = []
+        for seed in inference_seeds:
+            seed_raw = raw / f"seed_{seed:03d}"
+            started_seed = time.monotonic()
+            run([sys.executable, "inference.py", "--prompts_path", str(prompts), "--step", str(args.checkpoint_step),
+                 "--content_path_ckpt", str(checkpoint), "--style_path_ckpt", str(checkpoint),
+                 "--content_name", cls, "--style_name", "photo", "--output_dir", str(seed_raw),
+                 "--images_per_prompt", "1", "--seed", str(seed),
+                 "--model_path", args.switti, "--prompt_config_path", "config/config_group_scales.yaml",
+                 "--proj_path", str(proj), "--proj_2_path", str(proj2)], model)
+            seconds_by_seed.append(time.monotonic() - started_seed)
+            normalize_outputs(seed_raw, dest, n_prompts, seed)
+        infer_seconds = time.monotonic() - infer_start
         timing = {"preparation_seconds": prep_seconds, "inference_seconds": infer_seconds,
-                  "inference_seconds_per_image": None,
+                  "preparation_seconds_by_offset": [prep_seconds],
+                  "inference_seconds_by_seed": seconds_by_seed,
+                  "inference_seconds_per_image": infer_seconds / (n_prompts * len(inference_seeds)),
+                  "inference_seconds_per_image_by_offset": [seconds / n_prompts for seconds in seconds_by_seed],
                   "end_to_end_seconds_per_image": infer_seconds / (n_prompts * args.images_per_prompt),
-                  "timing_note": "Inference subprocess wall time includes model loading and file I/O; not pure model inference.",
+                  "timing_note": "Each seed is an independent upstream process; time includes model loading and file I/O.",
                   "reference_protocol": "one deterministic first ViCo reference", "reference": item["single_reference"],
-                  "sampling": "upstream batched sampling from a single seeded RNG stream", "seed": args.seed,
+                  "sampling": "independent upstream inference seeds", "inference_seeds": inference_seeds,
                   "steps": args.steps, "checkpoint_step": args.checkpoint_step}
         (dest / "timing.json").write_text(json.dumps(timing, indent=2) + "\n")
         print(f"[complete] {subject}: {n_prompts * args.images_per_prompt} images", flush=True)

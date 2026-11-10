@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Train one scale-0..4 offset from each top-level styles/*.png image, then
-# generate five separate tests, injecting exactly one scale (0, 1, 2, 3, 4)
-# into the normal prompt "a dog" in each test.
+# compare four tests using the normal prompt "a dog": no style injection,
+# injection at scale 0, injection at scale 1, and injection at scales 0+1.
 #
 # Example:
 #   bash scripts/run_style_endpoint_offsets.sh

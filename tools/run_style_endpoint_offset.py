@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Learn one style offset per image and compare single-scale injections.
+"""Learn one style offset per image and compare scale-placement variants.
 
 For each ``styles/*.png`` image this runner:
 
 1. optimizes a per-scale AdaLN offset using only training scales 0--4;
-2. injects each learned slot 0, 1, 2, 3, 4 separately at inference;
+2. injects the learned style offset using four scale-placement variants:
+   no injection, scale 0, scale 1, and scales 0+1;
 3. generates ``a dog`` with the normal prompt conditioning (prompt CA and
    prompt shared AdaLN), plus one selected offset.
 
@@ -29,7 +30,7 @@ def run(command: list[str], root: Path) -> None:
 
 
 def save_comparison(records: list[dict], output: Path) -> None:
-    """Save one reference and five single-scale results per style."""
+    """Save one reference and the four requested scale-placement variants per style."""
     rows = []
     for record in records:
         source = cv2.imread(record["style_path"])
@@ -39,7 +40,8 @@ def save_comparison(records: list[dict], output: Path) -> None:
         size = 256
         images = [source, *generated]
         tiles = []
-        for label, image in zip(["style reference", *[f"offset scale {i}" for i in range(5)]], images):
+        labels = ["style reference", "no style", "offset scale 0", "offset scale 1", "offset scales 0+1"]
+        for label, image in zip(labels, images):
             resized = cv2.resize(image, (size, size), interpolation=cv2.INTER_AREA)
             header = np.full((40, size, 3), 255, dtype=np.uint8)
             cv2.putText(header, label, (8, 27), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 1, cv2.LINE_AA)
@@ -94,7 +96,16 @@ def main() -> None:
     for style_path in style_paths:
         name = style_path.stem
         offset_path = work_root / name / "offset.pth"
-        result_paths = {str(scale): output_root / f"style_{name}_scale{scale}.png" for scale in range(5)}
+        variants = {
+            "none": "",
+            "scale0": "0",
+            "scale1": "1",
+            "scale0_1": "0-1",
+        }
+        result_paths = {
+            variant: output_root / f"style_{name}_{variant}.png"
+            for variant in variants
+        }
         started = time.monotonic()
 
         if args.force_retrain or not offset_path.exists():
@@ -109,26 +120,28 @@ def main() -> None:
             ], root)
         preparation_seconds = time.monotonic() - started
 
-        for scale, result_path in result_paths.items():
+        for variant, result_path in result_paths.items():
             run([
                 sys.executable, "tools/infer_style_endpoint_offset.py",
                 "--offset-path", str(offset_path), "--prompt", args.prompt, "--output", str(result_path),
-                "--offset-scale-index", scale,
+                "--offset-scales", variants[variant],
                 "--num-samples", str(args.num_samples), "--seed", str(args.seed), *common,
             ], root)
         records.append({
             "style": name, "style_path": str(style_path), "offset_path": str(offset_path),
-            "outputs": {scale: str(path) for scale, path in result_paths.items()},
+            "outputs": {variant: str(path) for variant, path in result_paths.items()},
             "preparation_seconds": preparation_seconds,
-            "trained_scales": "0-4", "injected_scales": [0, 1, 2, 3, 4], "prompt": args.prompt,
+            "trained_scales": "0-4", "variants": {name: scales for name, scales in variants.items()},
+            "prompt": args.prompt,
         })
         print(f"[done] style={name} outputs={list(result_paths.values())}", flush=True)
 
     (output_root / "run.json").write_text(json.dumps({
         "prompt": args.prompt, "styles": records, "trained_scales": [0, 1, 2, 3, 4],
-        "injected_scales": [0, 1, 2, 3, 4], "num_styles": len(records),
+        "variants": {"none": [], "scale0": [0], "scale1": [1], "scale0_1": [0, 1]},
+        "num_styles": len(records),
     }, indent=2) + "\n")
-    save_comparison(records, output_root / "style_single_scale_comparison.png")
+    save_comparison(records, output_root / "style_scale_placement_comparison.png")
     print(f"[complete] generated {len(records)} style-conditioned image(s) in {output_root}")
 
 

@@ -13,7 +13,7 @@ import cv2
 import torch
 
 from tools.infer_offset_modspace import NULL, PROMPT, encode_texts, modspace_infer
-from tools.optimize_ada_offset import get_scale_schedule
+from tools.optimize_ada_offset import get_scale_schedule, parse_scales
 from tools.run_infinity import add_common_arguments, encode_prompt, load_tokenizer, load_transformer, load_visual_tokenizer
 
 
@@ -24,11 +24,14 @@ def main() -> None:
     parser.add_argument("--prompt", default="a dog")
     parser.add_argument("--output", required=True)
     parser.add_argument("--num-samples", type=int, default=1)
-    parser.add_argument("--offset-scale-index", type=int, required=True, choices=range(5))
+    parser.add_argument(
+        "--offset-scales", default="0",
+        help="scales receiving the learned style offset: '', '0', '1', or '0-1'",
+    )
     args = parser.parse_args()
     if args.num_samples < 1:
         parser.error("--num-samples must be positive")
-    offset_scales = {args.offset_scale_index}
+    offset_scales = set(parse_scales(args.offset_scales, 5)) if args.offset_scales else set()
 
     checkpoint = torch.load(args.offset_path, map_location="cpu")
     vae = load_visual_tokenizer(args)
@@ -70,7 +73,7 @@ def main() -> None:
     # Keep a canonical first-sample path for the cross-scale comparison.
     if not cv2.imwrite(str(output), cv2.imread(str(samples[0]))):
         raise OSError(f"Could not write {output}")
-    print(f"[saved] {len(samples)} image(s), prompt={args.prompt!r}, injected scale={args.offset_scale_index} -> {output}")
+    print(f"[saved] {len(samples)} image(s), prompt={args.prompt!r}, injected scales={sorted(offset_scales)} -> {output}")
 
 
 if __name__ == "__main__":
