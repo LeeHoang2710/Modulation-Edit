@@ -219,6 +219,12 @@ def optimize(args, infinity, vae, device, train_cond=None):
 
     def save_offset(path, iters_done):
         nonlocal checkpoint_save_seconds
+        # CUDA launches are asynchronous.  Synchronize before entering the
+        # checkpoint-I/O interval so the final optimizer work is charged to
+        # preparation rather than being accidentally subtracted with
+        # offset.detach().cpu() / torch.save().
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         preparation_before_save = time.perf_counter() - PROGRAM_START - checkpoint_save_seconds
         save_started = time.perf_counter()
         os.makedirs(osp.dirname(osp.abspath(path)), exist_ok=True)
@@ -295,6 +301,21 @@ def optimize(args, infinity, vae, device, train_cond=None):
                 'total_wall_seconds': total_wall_seconds,
                 'checkpoint_save_seconds': checkpoint_save_seconds,
                 'preparation_seconds_excluding_checkpoint_io': total_wall_seconds - checkpoint_save_seconds,
+                'timing_scope': {
+                    'starts': 'process startup before heavy Python/torch imports',
+                    'includes': ['imports', 'argument parsing', 'text encoding', 'VAE/model loading',
+                                 'reference transforms and VAE feature caching', 'offset optimization'],
+                    'excludes': ['offset CPU transfer', 'checkpoint serialization', 'checkpoint disk write',
+                                 'optional post-training reconstruction'],
+                    'cuda_synchronized_before_checkpoint_io': True,
+                },
+                'optimization': {
+                    'iters': args.iters,
+                    'batch_size': args.batch_size,
+                    'grad_accum': args.grad_accum,
+                    'effective_batch_size': args.batch_size * args.grad_accum,
+                    'examples_processed_nominal': args.iters * args.batch_size * args.grad_accum,
+                },
                 'checkpoints': checkpoint_timings,
             }, f, indent=2)
 

@@ -155,6 +155,14 @@ This runs the same subject, optimization seed, training prompt, loss, learning r
 
 Results are written to `output/ablation_vico/24_training_speed_black_cat/timing_summary.csv`. Preparation excludes checkpoint-writing time. Inference excludes model loading and records mean/std over 100 generated images for each configuration.
 
+For our method, preparation starts before heavy Python/PyTorch imports and
+includes text encoding, VAE and Infinity loading, reference preprocessing,
+one-time VAE feature caching, and all optimizer updates. CUDA is explicitly
+synchronized after the final optimizer update. Offset transfer to CPU,
+serialization, and checkpoint disk writing are measured separately and
+excluded. Optional reconstruction generation is also excluded. Therefore the
+three configurations use the same end-to-end preparation boundary.
+
 To use another object or inference batch:
 
 ```bash
