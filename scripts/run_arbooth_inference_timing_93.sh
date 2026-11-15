@@ -10,7 +10,7 @@ fi
 "$ARBOOTH_PYTHON" benchmark/benchmark_arbooth_93.py \
   --arbooth-root "${ARBOOTH_ROOT:-/workspace/ARBooth}" \
   --subjects "${SUBJECTS:-brown_dog,black_cat,alarm_clock}" \
-  --manifest "${MANIFEST:-benchmark/manifests/vico.json}" \
+  --data-dir "${VICO_DIR:-/workspace/CSD-VAR/benchmark_data/vico_csd}" \
   --checkpoint-root "${ARBOOTH_CHECKPOINT_ROOT:-weights/arbooth/by_subject}" \
   --vae-path "${VAE_PATH:-weights/infinity_vae_d32reg.pth}" \
   --text-encoder-ckpt "${TEXT_ENCODER:-weights/flan-t5-xl}" \

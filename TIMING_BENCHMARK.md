@@ -130,6 +130,10 @@ bash scripts/run_arbooth_inference_timing_93.sh
 
 The default subjects are `brown_dog`, `black_cat`, and `alarm_clock`. This generates exactly `3 × 31 × 1 = 93` images with fixed seed 0. `output/timing/arbooth_3subjects_93/timing.json` reports CUDA-synchronized overall and per-subject timing; checkpoint loading and JPEG writing are excluded.
 
+The runner reads `subjects.csv` and the two official 31-prompt files directly
+from `/workspace/CSD-VAR/benchmark_data/vico_csd`; this branch does not require
+`benchmark/manifests/vico.json`.
+
 Override the three subjects or seed if needed:
 
 ```bash

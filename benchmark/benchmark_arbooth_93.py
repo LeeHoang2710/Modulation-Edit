@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import statistics
 import sys
@@ -22,7 +23,7 @@ def main() -> None:
     root = Path(__file__).resolve().parents[1]
     p = argparse.ArgumentParser()
     p.add_argument("--arbooth-root", default="/workspace/ARBooth")
-    p.add_argument("--manifest", default="benchmark/manifests/vico.json")
+    p.add_argument("--data-dir", default="/workspace/CSD-VAR/benchmark_data/vico_csd")
     p.add_argument("--subjects", default="brown_dog,black_cat,alarm_clock")
     p.add_argument("--checkpoint-root", default="weights/arbooth/by_subject")
     p.add_argument("--vae-path", default="weights/infinity_vae_d32reg.pth")
@@ -38,10 +39,23 @@ def main() -> None:
     subjects = [value.strip() for value in args.subjects.split(",") if value.strip()]
     if len(subjects) != 3:
         p.error("--subjects must contain exactly three comma-separated subjects")
-    manifest_path = Path(args.manifest)
-    if not manifest_path.is_absolute():
-        manifest_path = root / manifest_path
-    entries = {item["subject"]: item for item in json.loads(manifest_path.read_text())["subjects"]}
+    data_dir = Path(args.data_dir).resolve()
+    subject_csv = data_dir / "subjects.csv"
+    if not subject_csv.is_file():
+        raise SystemExit(
+            f"Missing ViCo manifest: {subject_csv}\n"
+            "Run: bash scripts/prepare_vico_beta_alpha.sh"
+        )
+    entries = {}
+    with subject_csv.open(newline="") as handle:
+        for row in csv.DictReader(handle):
+            prompt_file = data_dir / row["prompts"]
+            if not prompt_file.is_file():
+                raise SystemExit(f"Missing prompt file: {prompt_file}")
+            row["prompt_templates"] = [
+                line.strip() for line in prompt_file.read_text().splitlines() if line.strip()
+            ]
+            entries[row["subject"]] = row
     missing = [subject for subject in subjects if subject not in entries]
     if missing:
         p.error(f"subjects absent from manifest: {missing}")
