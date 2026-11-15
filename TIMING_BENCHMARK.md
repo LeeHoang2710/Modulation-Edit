@@ -172,6 +172,17 @@ SUBJECT=alarm_clock INFER_BATCH=1 bash ablation/08_training_speed_benchmark.sh
 
 ## 7. CSD-VAR: preparation and 93-image inference timing
 
+If `scripts/prepare_vico_beta_alpha.sh` already created a working `csd-var`
+environment, the runner detects and reuses it automatically. Verify it with:
+
+```bash
+"$(conda info --base)/envs/csd-var/bin/python" -c \
+  'import torch, transformers, diffusers, safetensors; print(torch.cuda.is_available())'
+```
+
+If that prints `True`, skip directly to the run command below. Otherwise,
+create the dedicated environment as follows.
+
 Create an isolated CSD-VAR environment and install the released requirements:
 
 ```bash
