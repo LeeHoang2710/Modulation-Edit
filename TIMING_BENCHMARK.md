@@ -160,3 +160,53 @@ To use another object or inference batch:
 ```bash
 SUBJECT=alarm_clock INFER_BATCH=1 bash ablation/08_training_speed_benchmark.sh
 ```
+
+## 7. CSD-VAR: preparation and 93-image inference timing
+
+Create an isolated CSD-VAR environment and install the released requirements:
+
+```bash
+cd /workspace/Modulation-Edit
+CONDA_BASE="$(conda info --base)"
+source "$CONDA_BASE/etc/profile.d/conda.sh"
+conda create -y -n benchmark-csdvar python=3.10 pip
+conda run -n benchmark-csdvar python -m pip install --upgrade 'pip<24.1' setuptools wheel
+conda run -n benchmark-csdvar python -m pip install \
+  torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 \
+  --index-url https://download.pytorch.org/whl/cu121
+conda run -n benchmark-csdvar python -m pip install -r /workspace/CSD-VAR/requirements.txt
+conda run -n benchmark-csdvar python -m pip install 'numpy<2'
+```
+
+Download/cache the Switti and VQ-VAE weights before timing:
+
+```bash
+conda run -n benchmark-csdvar python -c \
+  'from huggingface_hub import snapshot_download; [snapshot_download(repo_id=x) for x in ("yresearch/Switti-AR", "yresearch/VQVAE-Switti", "openai/clip-vit-large-patch14", "laion/CLIP-ViT-bigG-14-laion2B-39B-b160k")]'
+```
+
+Run three subjects × 31 prompts × one fixed seed:
+
+```bash
+bash scripts/run_csd_var_timing_93.sh
+```
+
+Outputs and timing are saved under:
+
+```text
+output/timing/csd_var_3subjects_93/images/
+output/timing/csd_var_3subjects_93/timing.json
+```
+
+Two preparation measurements are reported for each subject:
+
+- `preparation_seconds_to_used_checkpoint`: SVD extraction plus training until
+  every component of the step-150 checkpoint used for inference is written;
+- `preparation_full_200_step_seconds`: SVD extraction plus the complete
+  200-step optimization process.
+
+Weight downloads, input staging, and image copying are excluded. The released
+`inference.py` loads Switti once and generates all 31 prompts; the reported
+inference time is its total process time divided by 31, so it includes model
+startup and PNG writing. This limitation is stated in the JSON and should be
+retained when comparing against the in-process ARBooth measurement.
