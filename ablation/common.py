@@ -276,6 +276,12 @@ def run(args, variants):
                         progress.update(args.num_samples)
                     continue
                 os.makedirs(pdir, exist_ok=True)
+                # Unified inference timing contract (ours / ARBooth / CSD-VAR):
+                # prompt encoding + autoregressive sampling + VAE decoding.
+                # Frozen-model loading and image writes remain outside.
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                prompt_infer_started = time.perf_counter()
                 texts = encode_texts(infinity, args.null_len, t5[prompt])
                 if v.base_text == 'subject':
                     sos, gss, ca = texts
@@ -285,8 +291,15 @@ def run(args, variants):
                 for start in range(0, args.num_samples, args.batch):
                     n = min(args.batch, args.num_samples - start)
                     # the same seed for a (prompt, batch) in every variant -> paired comparisons
-                    infer_started = time.perf_counter()
+                    if start == 0:
+                        infer_started = prompt_infer_started
+                    else:
+                        if torch.cuda.is_available():
+                            torch.cuda.synchronize()
+                        infer_started = time.perf_counter()
                     imgs = sample(infinity, vae, texts, offset, v, scale_schedule, n, args.seed + 1000 * p_idx + start, args)
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
                     batch_latency_seconds = time.perf_counter() - infer_started
                     seconds_per_image = batch_latency_seconds / n
                     for i, img in enumerate(imgs):
@@ -314,6 +327,9 @@ def run(args, variants):
                         'images': timing_records,
                         'inference_seconds_per_image_mean': avg,
                         'inference_seconds_per_image_std': std,
+                        'generation_seconds_per_image_mean': avg,
+                        'generation_seconds_per_image_std': std,
+                        'timing_contract': 'prompt encoding + autoregressive sampling + VAE decoding; excludes model loading and image writes',
                     }, f, indent=2)
                 print(f'   [{v.name}] {sub["subject"]}: {made} images, {(time.time() - stt) / made:.2f}s/img', flush=True)
     if progress is not None:

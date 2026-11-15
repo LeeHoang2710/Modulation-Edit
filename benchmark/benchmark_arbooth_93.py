@@ -13,9 +13,9 @@ from pathlib import Path
 
 def stats(values: list[float]) -> dict[str, float]:
     return {
-        "mean_inference_seconds": statistics.mean(values),
-        "std_inference_seconds": statistics.stdev(values) if len(values) > 1 else 0.0,
-        "total_inference_seconds": sum(values),
+        "generation_seconds_per_image_mean": statistics.mean(values),
+        "generation_seconds_per_image_std": statistics.stdev(values) if len(values) > 1 else 0.0,
+        "generation_seconds_total": sum(values),
     }
 
 
@@ -138,13 +138,16 @@ def main() -> None:
         "method": "ARBooth", "protocol": "3 subjects x 31 prompts x 1 fixed seed",
         "subjects": subjects, "images": len(all_durations), "seed": args.seed,
         "model_load_excluded": True, "image_write_excluded": True,
+        "preparation_seconds": None,
+        "preparation_note": "Released checkpoints were used; personalization/training was not rerun, so preparation time is unavailable rather than replaced by checkpoint loading.",
+        "timing_contract": "prompt encoding + autoregressive sampling + VAE decoding; excludes model loading and image writes",
         **stats(all_durations), "per_subject": subject_reports,
         "per_image_seconds": all_durations,
     }
     if report["images"] != 93:
         raise RuntimeError(f"expected 93 images, generated {report['images']}")
     (output / "timing.json").write_text(json.dumps(report, indent=2) + "\n")
-    print(f"ARBooth: {report['mean_inference_seconds']:.4f} +/- {report['std_inference_seconds']:.4f} s/image (n=93)")
+    print(f"ARBooth: {report['generation_seconds_per_image_mean']:.4f} +/- {report['generation_seconds_per_image_std']:.4f} s/image (n=93)")
 
 
 if __name__ == "__main__":

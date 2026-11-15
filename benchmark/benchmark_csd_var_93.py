@@ -77,6 +77,59 @@ def checkpoint_files(directory: Path, step: int) -> list[Path]:
     )]
 
 
+def create_timed_inference(source: Path, destination: Path) -> None:
+    """Create a version-pinned instrumentation copy; upstream stays untouched."""
+    code = source.read_text()
+    replacements = [
+        (
+            "import os\nfrom datetime import datetime",
+            "import os\nimport time\nfrom datetime import datetime",
+        ),
+        (
+            '    parser.add_argument(\n        "--save_grid",',
+            '    parser.add_argument("--timing_file", type=str, default="")\n'
+            '    parser.add_argument(\n        "--save_grid",',
+        ),
+        (
+            "    # Generate and save images for each prompt\n    for prompt_idx,",
+            "    # CUDA-synchronized generation-only timings. Model/checkpoint loading above and image writes below are excluded.\n"
+            "    generation_durations = []\n"
+            "    # Generate and save images for each prompt\n    for prompt_idx,",
+        ),
+        (
+            "        # Generate all images at once\n        images = pipe(\n",
+            "        # Prompt encoding happens inside pipe and is part of the shared timing contract.\n"
+            "        if torch.cuda.is_available():\n            torch.cuda.synchronize()\n"
+            "        generation_started = time.perf_counter()\n"
+            "        # Generate all images at once\n        images = pipe(\n",
+        ),
+        (
+            "        # Save each generated image\n        for i, image in enumerate(images):",
+            "        if torch.cuda.is_available():\n            torch.cuda.synchronize()\n"
+            "        generation_durations.append(time.perf_counter() - generation_started)\n\n"
+            "        # Save each generated image\n        for i, image in enumerate(images):",
+        ),
+        (
+            '    print(f"Results saved to {result_dir}")',
+            '    if args.timing_file:\n'
+            '        timing_dir = os.path.dirname(os.path.abspath(args.timing_file))\n'
+            '        os.makedirs(timing_dir, exist_ok=True)\n'
+            '        with open(args.timing_file, "w") as timing_handle:\n'
+            '            json.dump({"images": len(generation_durations) * args.images_per_prompt, '
+            '"batch_durations_seconds": generation_durations, "batch_size": args.images_per_prompt, '
+            '"timing_contract": "prompt encoding + autoregressive sampling + VAE decoding; excludes model loading and image writes"}, '
+            'timing_handle, indent=2)\n'
+            '    print(f"Results saved to {result_dir}")',
+        ),
+    ]
+    for old, new in replacements:
+        if old not in code:
+            raise RuntimeError(f"Unsupported CSD-VAR inference.py; instrumentation anchor missing: {old[:80]!r}")
+        code = code.replace(old, new, 1)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(code)
+
+
 def normalize(raw: Path, target: Path) -> None:
     runs = sorted(path for path in raw.iterdir() if path.is_dir())
     if len(runs) != 1:
@@ -117,6 +170,8 @@ def main() -> None:
         raise SystemExit(f"Missing released CSD-VAR source: {csd}")
     rows = read_subjects(data_dir, subjects)
     work_root, out_root = Path(args.work_dir).resolve(), Path(args.output).resolve()
+    timed_inference = work_root / "_instrumented_inference.py"
+    create_timed_inference(csd / "inference.py", timed_inference)
     reports = []
     for subject in subjects:
         item = rows[subject]
@@ -162,35 +217,47 @@ def main() -> None:
         prep_to_used_checkpoint = svd_seconds + checkpoint_ready_after_train_start
         full_preparation_seconds = svd_seconds + train_seconds
         raw = work / "raw"
-        infer = execute([sys.executable, "inference.py", "--prompts_path", str(prompts),
+        generation_timing = work / "generation_timing.json"
+        infer_process = execute([sys.executable, str(timed_inference), "--prompts_path", str(prompts),
                          "--step", str(args.checkpoint_step), "--content_path_ckpt", str(checkpoint),
                          "--style_path_ckpt", str(checkpoint), "--content_name", cls, "--style_name", "photo",
                          "--output_dir", str(raw), "--images_per_prompt", "1", "--seed", str(args.seed),
+                         "--timing_file", str(generation_timing),
                          "--model_path", args.switti, "--prompt_config_path", "config/config_group_scales.yaml",
                          "--proj_path", str(proj), "--proj_2_path", str(proj2)], csd, log)
         normalize(raw, target)
+        measured = json.loads(generation_timing.read_text())
+        durations = [float(value) for value in measured["batch_durations_seconds"]]
+        if measured["images"] != 31 or len(durations) != 31:
+            raise RuntimeError(f"Expected 31 CSD-VAR generation timings, got {measured}")
         report = {"subject": subject, "images": 31,
                   "svd_seconds": svd_seconds, "training_full_seconds": train_seconds,
                   "preparation_seconds_to_used_checkpoint": prep_to_used_checkpoint,
                   "preparation_full_200_step_seconds": full_preparation_seconds,
                   "training_steps": args.steps, "inference_checkpoint_step": args.checkpoint_step,
-                  "inference_process_seconds": infer, "inference_process_seconds_per_image": infer / 31}
+                  "generation_seconds_total": sum(durations),
+                  "generation_seconds_per_image_mean": statistics.mean(durations),
+                  "generation_seconds_per_image_std": statistics.stdev(durations),
+                  "inference_process_wall_seconds_diagnostic": infer_process,
+                  "timing_contract": measured["timing_contract"],
+                  "generation_durations_seconds": durations}
         reports.append(report)
         (target / "timing.json").write_text(json.dumps(report, indent=2) + "\n")
         print(f"[complete] {subject}: prep-to-step-{args.checkpoint_step}={prep_to_used_checkpoint:.2f}s "
-              f"full-prep={full_preparation_seconds:.2f}s inference={infer / 31:.4f}s/image", flush=True)
+              f"full-prep={full_preparation_seconds:.2f}s generation={statistics.mean(durations):.4f}s/image", flush=True)
     prep_values = [row["preparation_seconds_to_used_checkpoint"] for row in reports]
     full_prep_values = [row["preparation_full_200_step_seconds"] for row in reports]
-    infer_values = [row["inference_process_seconds_per_image"] for row in reports]
+    infer_values = [value for row in reports for value in row["generation_durations_seconds"]]
     summary = {"method": "CSD-VAR (Switti)", "protocol": "3 subjects x 31 prompts x seed 0", "images": 93,
                "preparation_mean_seconds_per_subject": statistics.mean(prep_values),
                "preparation_std_seconds_per_subject": statistics.stdev(prep_values),
                "full_200_step_preparation_mean_seconds_per_subject": statistics.mean(full_prep_values),
                "full_200_step_preparation_std_seconds_per_subject": statistics.stdev(full_prep_values),
-               "inference_mean_seconds_per_image": statistics.mean(infer_values),
-               "inference_std_seconds_per_image_across_subjects": statistics.stdev(infer_values),
+               "generation_seconds_per_image_mean": statistics.mean(infer_values),
+               "generation_seconds_per_image_std": statistics.stdev(infer_values),
+               "generation_seconds_total": sum(infer_values),
                "preparation_timing_note": "Primary preparation is SVD plus time until every file of the checkpoint used for inference is written; full 200-step wall time is reported separately. Cached weight downloads and input staging are excluded.",
-               "inference_timing_note": "Amortized inference.py process wall time; includes Switti loading and PNG output.",
+               "inference_timing_note": "Internally instrumented and CUDA-synchronized; includes prompt encoding, autoregressive sampling, and VQ-VAE decoding; excludes Switti/checkpoint loading and PNG output. Full process wall time is retained only as a diagnostic.",
                "per_subject": reports}
     summary_path = out_root.parent / "timing.json"
     summary_path.write_text(json.dumps(summary, indent=2) + "\n")

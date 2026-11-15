@@ -153,15 +153,16 @@ This runs the same subject, optimization seed, training prompt, loss, learning r
 2. batch 4, gradient accumulation 1, 200 optimizer steps;
 3. batch 4, gradient accumulation 2, 100 optimizer steps.
 
-Results are written to `output/ablation_vico/24_training_speed_black_cat/timing_summary.csv`. Preparation excludes checkpoint-writing time. Inference excludes model loading and records mean/std over 100 generated images for each configuration.
+Results are written to `output/ablation_vico/24_training_speed_black_cat/timing_summary.csv`. The primary preparation number is time until a reusable offset checkpoint is fully materialized. Generation excludes model loading and image writing and records mean/std over 100 images for each configuration.
 
 For our method, preparation starts before heavy Python/PyTorch imports and
 includes text encoding, VAE and Infinity loading, reference preprocessing,
-one-time VAE feature caching, and all optimizer updates. CUDA is explicitly
-synchronized after the final optimizer update. Offset transfer to CPU,
-serialization, and checkpoint disk writing are measured separately and
-excluded. Optional reconstruction generation is also excluded. Therefore the
-three configurations use the same end-to-end preparation boundary.
+one-time VAE feature caching, all optimizer updates, and materializing the
+reusable offset checkpoint. CUDA is explicitly synchronized after the final
+optimizer update. Compute-only preparation and checkpoint I/O are also
+reported separately for diagnosis. Optional reconstruction generation is
+excluded. Therefore the three configurations use the same end-to-end
+preparation boundary.
 
 To use another object or inference batch:
 
@@ -213,8 +214,22 @@ Two preparation measurements are reported for each subject:
 - `preparation_full_200_step_seconds`: SVD extraction plus the complete
   200-step optimization process.
 
-Weight downloads, input staging, and image copying are excluded. The released
-`inference.py` loads Switti once and generates all 31 prompts; the reported
-inference time is its total process time divided by 31, so it includes model
-startup and PNG writing. This limitation is stated in the JSON and should be
-retained when comparing against the in-process ARBooth measurement.
+Weight downloads, input staging, and image copying are excluded. The benchmark
+creates an instrumented copy of released `inference.py`; upstream source is not
+modified. CUDA-synchronized generation timing includes prompt encoding,
+autoregressive sampling, and VQ-VAE decoding. Switti/checkpoint loading,
+directory creation, JSON/PNG writing, and process startup are excluded. The
+full subprocess wall time remains in the report only as a diagnostic.
+
+All three generation reports now use the same timing contract:
+
+```text
+include: prompt encoding + autoregressive sampling + image decoding
+exclude: frozen-model/checkpoint loading + process setup + image writing
+CUDA synchronize immediately before and after the measured region
+```
+
+ARBooth uses released pretrained subject checkpoints, so its preparation time
+is recorded as unavailable (`null`); checkpoint loading is not mislabeled as
+personalization. Our method and CSD-VAR both report the subject-specific
+optimization required before reusable inference.

@@ -14,10 +14,15 @@ for name in ("bs2_ga2_it200", "bs4_ga1_it200", "bs4_ga2_it100"):
     values = [float(x["inference_seconds"]) for x in infer["images"]]
     rows.append({
         "configuration": name,
-        "preparation_seconds": prep["preparation_seconds_excluding_checkpoint_io"],
+        "preparation_seconds": prep["total_wall_seconds"],
+        "preparation_seconds_to_materialized_offset": prep["total_wall_seconds"],
+        "preparation_compute_seconds_excluding_checkpoint_io": prep["preparation_seconds_excluding_checkpoint_io"],
+        "checkpoint_io_seconds": prep["checkpoint_save_seconds"],
         "inference_images": len(values),
         "inference_mean_seconds": statistics.mean(values),
         "inference_std_seconds": statistics.stdev(values),
+        "generation_mean_seconds": statistics.mean(values),
+        "generation_std_seconds": statistics.stdev(values),
     })
 with (root / "timing_summary.csv").open("w", newline="") as f:
     w = csv.DictWriter(f, fieldnames=rows[0]); w.writeheader(); w.writerows(rows)
