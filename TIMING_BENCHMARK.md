@@ -188,6 +188,17 @@ primary `preparation_seconds`/`pure_optimization_seconds` metric is the exact
 CUDA-synchronized optimizer loop. Model loading, text encoding, reference
 preprocessing, one-time VAE feature caching, and checkpoint I/O are excluded.
 Generation runs one untimed warm-up and reports mean/std over 100 images.
+After generation, the saved images from all three configurations are evaluated
+with the same ARBooth-compatible DINO, CLIP-I, and CLIP-T implementation. The
+quality-only and combined reports are written to `metrics_summary.csv` and
+`timing_metrics_summary.csv`. Metric evaluation is outside every timing region.
+
+To evaluate an already completed timing run without regenerating images:
+
+```bash
+SUBJECT=black_cat bash ablation/evaluate_training_timing_metrics.sh \
+  output/timing/YOUR_RUN_ID/ours
+```
 
 The old end-to-end number remains as `process_wall_seconds_diagnostic`.
 `feature_cache_seconds` and `checkpoint_io_seconds` expose overhead, while

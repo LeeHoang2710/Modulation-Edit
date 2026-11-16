@@ -46,4 +46,9 @@ echo "[infer] 3 configurations x 100 images; batch=$INFER_BATCH"
   --progress_desc "training timing" > "$OUT/logs/inference.log" 2>&1
 "$PYTHON" ablation/summarize_training_timing.py --experiment "$OUT" --subject "$SUBJECT" \
   | tee "$OUT/timing_summary.txt"
+if [ "${EVALUATE_METRICS:-1}" = 1 ]; then
+  SUBJECT="$SUBJECT" bash ablation/evaluate_training_timing_metrics.sh "$OUT"
+fi
 echo "[done] $OUT/timing_summary.csv"
+echo "[done] $OUT/metrics_summary.csv"
+echo "[done] $OUT/timing_metrics_summary.csv"

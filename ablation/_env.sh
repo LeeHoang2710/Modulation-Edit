@@ -1,19 +1,24 @@
 # sourced by ablation/*.sh; every value can be overridden from the environment
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 PYTHON=${PYTHON:-.venv/bin/python}                                   # Infinity env (torch 2.5.1)
-if [ -z "${EVAL_PYTHON:-}" ]; then
-    if command -v conda >/dev/null 2>&1; then
-        EVAL_PYTHON="$(conda info --base)/envs/csd-var/bin/python"
-    elif [ -x /venv/csd-var/bin/python ]; then
-        EVAL_PYTHON=/venv/csd-var/bin/python
-    elif [ -x /opt/miniforge3/envs/csd-var/bin/python ]; then
-        EVAL_PYTHON=/opt/miniforge3/envs/csd-var/bin/python
-    elif [ -x /root/miniconda3/envs/csd-var/bin/python ]; then
-        EVAL_PYTHON=/root/miniconda3/envs/csd-var/bin/python
-    else
-        EVAL_PYTHON=/venv/csd-var/bin/python
-    fi
+if [ ! -x "${EVAL_PYTHON:-}" ]; then
+    conda_base=""
+    if command -v conda >/dev/null 2>&1; then conda_base="$(conda info --base)"; fi
+    for candidate in \
+        /venv/csd-var/bin/python \
+        /venv/benchmark-csdvar/bin/python \
+        "${conda_base:+${conda_base}/envs/csd-var/bin/python}" \
+        "${conda_base:+${conda_base}/envs/benchmark-csdvar/bin/python}" \
+        /opt/miniforge3/envs/csd-var/bin/python \
+        /opt/conda/envs/csd-var/bin/python \
+        /root/miniconda3/envs/csd-var/bin/python; do
+        if [ -n "${candidate}" ] && [ -x "${candidate}" ]; then
+            EVAL_PYTHON="${candidate}"
+            break
+        fi
+    done
 fi
+EVAL_PYTHON=${EVAL_PYTHON:-/venv/csd-var/bin/python}
 VICO_DIR=${VICO_DIR:-/workspace/CSD-VAR/benchmark_data/vico_csd}
 ARBOOTH_ROOT=${ARBOOTH_ROOT:-/workspace/ARBooth}
 CSD_ROOT=${CSD_ROOT:-/workspace/CSD-VAR}
