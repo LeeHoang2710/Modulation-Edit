@@ -48,7 +48,26 @@ for subject in brown_dog black_cat alarm_clock; do
 done
 
 "$OURS_PYTHON" -c 'import cv2, flash_attn, torch, transformers; from transformers import T5EncoderModel; assert torch.cuda.is_available(); print("ours", torch.__version__, torch.cuda.get_device_name(0))'
-PYTHONPATH="$ARBOOTH_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$ARBOOTH_PYTHON" -c 'import cv2, flash_attn, inspect, torch, transformers; from torch.nn.attention.flex_attention import flex_attention; from tools.run_arbooth_for_eval import encode_prompt, gen_one_img; from transformers import T5EncoderModel; assert "text_cond_tuple" in inspect.signature(gen_one_img).parameters; assert torch.cuda.is_available(); print("arbooth", torch.__version__, torch.cuda.get_device_name(0))'
+"$ARBOOTH_PYTHON" - "$ARBOOTH_ROOT" <<'PY'
+import inspect
+import sys
+
+# This repository also contains an ``infinity`` package. Put ARBooth first so
+# tools.run_arbooth_for_eval cannot accidentally import Modulation-Edit's copy.
+sys.path.insert(0, sys.argv[1])
+
+import cv2
+import flash_attn
+import torch
+import transformers
+from torch.nn.attention.flex_attention import flex_attention
+from tools.run_arbooth_for_eval import encode_prompt, gen_one_img
+from transformers import T5EncoderModel
+
+assert "text_cond_tuple" in inspect.signature(gen_one_img).parameters
+assert torch.cuda.is_available()
+print("arbooth", torch.__version__, torch.cuda.get_device_name(0))
+PY
 PYTHONPATH="$CSD_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$CSD_PYTHON" -c 'import diffusers, safetensors, torch, transformers; assert torch.cuda.is_available(); print("csd-var", torch.__version__, torch.cuda.get_device_name(0))'
 
 # Fail now if a future CSD-VAR source update no longer matches the safe,
