@@ -9,15 +9,39 @@ export WORKSPACE
 echo "[1/4] Preparing Infinity, weights, ViCo data and CSD-VAR"
 bash scripts/prepare_vico_beta_alpha.sh
 
-command -v conda >/dev/null 2>&1 || { echo "Conda should have been installed by the previous step." >&2; exit 1; }
-CONDA_BASE="$(conda info --base)"
+CONDA_BIN=""
+for candidate in conda /opt/miniforge3/bin/conda /opt/conda/bin/conda /root/miniconda3/bin/conda; do
+  if command -v "${candidate}" >/dev/null 2>&1; then
+    CONDA_BIN="$(command -v "${candidate}")"
+    break
+  fi
+done
+[ -n "${CONDA_BIN}" ] || { echo "Conda should have been installed by the previous step." >&2; exit 1; }
+CONDA_BASE="$("${CONDA_BIN}" info --base)"
 source "$CONDA_BASE/etc/profile.d/conda.sh"
 
 echo "[2/4] Creating or repairing arbooth-vico"
-if [ ! -x "$CONDA_BASE/envs/arbooth-vico/bin/python" ]; then
-  conda create -y -n arbooth-vico python=3.10 pip
+AR_ENV_PATH="${AR_ENV_PATH:-/venv/arbooth-vico}"
+AR_PY="${ARBOOTH_PYTHON:-}"
+if [ ! -x "${AR_PY}" ]; then
+  for candidate in \
+      "${AR_ENV_PATH}/bin/python" \
+      /venv/arbooth-vico/bin/python \
+      "${CONDA_BASE}/envs/arbooth-vico/bin/python" \
+      /opt/miniforge3/envs/arbooth-vico/bin/python \
+      /opt/conda/envs/arbooth-vico/bin/python \
+      /root/miniconda3/envs/arbooth-vico/bin/python; do
+    if [ -x "${candidate}" ]; then
+      AR_PY="${candidate}"
+      break
+    fi
+  done
 fi
-AR_PY="$CONDA_BASE/envs/arbooth-vico/bin/python"
+if [ ! -x "${AR_PY}" ]; then
+  mkdir -p "$(dirname "${AR_ENV_PATH}")"
+  "${CONDA_BIN}" create -y -p "${AR_ENV_PATH}" python=3.10 pip
+  AR_PY="${AR_ENV_PATH}/bin/python"
+fi
 "$AR_PY" -m pip install --upgrade 'pip<24.1' setuptools wheel
 "$AR_PY" -m pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
 
@@ -56,4 +80,4 @@ for subject in ("brown_dog", "black_cat", "alarm_clock"):
 PY
 
 echo "[4/4] Running strict preflight"
-bash scripts/preflight_three_model_timing.sh
+ARBOOTH_PYTHON="${AR_PY}" bash scripts/preflight_three_model_timing.sh

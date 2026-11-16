@@ -80,17 +80,29 @@ print(
 print(f"[ready] FLAN-T5 shards={len(shards)}; ViCo subjects={len(subjects)}; prompts/subject=31")
 PY
 
-if command -v conda >/dev/null 2>&1; then
-  CONDA_BASE="$(conda info --base)"
-else
-  CONDA_BASE=/root/miniconda3
+EVAL_PYTHON="${EVAL_PYTHON:-}"
+if [[ ! -x "${EVAL_PYTHON}" ]]; then
+  conda_base=""
+  if command -v conda >/dev/null 2>&1; then
+    conda_base="$(conda info --base)"
+  fi
+  for candidate in \
+      /venv/csd-var/bin/python \
+      "${conda_base:+${conda_base}/envs/csd-var/bin/python}" \
+      /opt/miniforge3/envs/csd-var/bin/python \
+      /opt/conda/envs/csd-var/bin/python \
+      /root/miniconda3/envs/csd-var/bin/python; do
+    if [[ -n "${candidate}" && -x "${candidate}" ]]; then
+      EVAL_PYTHON="${candidate}"
+      break
+    fi
+  done
 fi
-EVAL_PYTHON="${EVAL_PYTHON:-${CONDA_BASE}/envs/csd-var/bin/python}"
-if [[ ! -x "$EVAL_PYTHON" ]]; then
-  echo "Missing evaluator Python: $EVAL_PYTHON" >&2
+if [[ ! -x "${EVAL_PYTHON}" ]]; then
+  echo "Missing evaluator Python. Rerun scripts/prepare_vico_ablation_assets.sh." >&2
   exit 1
 fi
-"$EVAL_PYTHON" - <<'PY'
+"${EVAL_PYTHON}" - <<'PY'
 import sys
 from pathlib import Path
 

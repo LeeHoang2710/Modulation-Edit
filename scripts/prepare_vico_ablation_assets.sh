@@ -9,6 +9,7 @@ ARBOOTH_ROOT="${ARBOOTH_ROOT:-${WORKSPACE}/ARBooth}"
 CSD_ROOT="${CSD_ROOT:-${WORKSPACE}/CSD-VAR}"
 VICO_DIR="${VICO_DIR:-${CSD_ROOT}/benchmark_data/vico_csd}"
 EVAL_ENV="${EVAL_ENV:-csd-var}"
+EVAL_ENV_PATH="${EVAL_ENV_PATH:-/venv/${EVAL_ENV}}"
 CUDA_WHL="${CUDA_WHL:-cu121}"
 
 command -v git >/dev/null 2>&1 || { echo "git is required" >&2; exit 1; }
@@ -34,11 +35,28 @@ fi
 CONDA_BASE="$(conda info --base)"
 # shellcheck disable=SC1091
 source "${CONDA_BASE}/etc/profile.d/conda.sh"
-if ! conda env list | awk '{print $1}' | grep -Fxq "${EVAL_ENV}"; then
-    conda create -y -n "${EVAL_ENV}" python=3.10 pip
+EVAL_PYTHON="${EVAL_PYTHON:-}"
+if [[ ! -x "${EVAL_PYTHON}" ]]; then
+    for candidate in \
+        "${EVAL_ENV_PATH}/bin/python" \
+        "/venv/${EVAL_ENV}/bin/python" \
+        "${CONDA_BASE}/envs/${EVAL_ENV}/bin/python" \
+        "/opt/miniforge3/envs/${EVAL_ENV}/bin/python" \
+        "/opt/conda/envs/${EVAL_ENV}/bin/python" \
+        "/root/miniconda3/envs/${EVAL_ENV}/bin/python"; do
+        if [[ -x "${candidate}" ]]; then
+            EVAL_PYTHON="${candidate}"
+            break
+        fi
+    done
+fi
+if [[ ! -x "${EVAL_PYTHON}" ]]; then
+    mkdir -p "$(dirname "${EVAL_ENV_PATH}")"
+    conda create -y -p "${EVAL_ENV_PATH}" python=3.10 pip
+    EVAL_PYTHON="${EVAL_ENV_PATH}/bin/python"
 fi
 
-PY=(conda run --no-capture-output -n "${EVAL_ENV}" python)
+PY=("${EVAL_PYTHON}")
 "${PY[@]}" -m pip install --upgrade 'pip<24.1' setuptools wheel
 "${PY[@]}" -m pip install \
     torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 \
@@ -141,4 +159,4 @@ test -d "${ARBOOTH_ROOT}/booth_evaluation"
 echo "[ready] ARBooth: ${ARBOOTH_ROOT}"
 echo "[ready] CSD-VAR: ${CSD_ROOT}"
 echo "[ready] ViCo benchmark: ${VICO_DIR}"
-echo "[ready] evaluator Python: ${CONDA_BASE}/envs/${EVAL_ENV}/bin/python"
+echo "[ready] evaluator Python: ${EVAL_PYTHON}"

@@ -143,12 +143,7 @@ done
 Confirm all required files:
 
 ```bash
-test -x .venv/bin/python
-test -x "$(conda info --base)/envs/arbooth-vico/bin/python"
-test -f weights/infinity_2b_reg.pth
-test -f weights/infinity_vae_d32reg.pth
-test -d weights/flan-t5-xl
-find weights/arbooth/by_subject -name '*.pth' -type l | sort
+bash scripts/preflight_three_model_timing.sh
 ```
 
 ## 5. ARBooth: three objects, 31 prompts, one seed
@@ -212,12 +207,11 @@ If `scripts/prepare_vico_beta_alpha.sh` already created a working `csd-var`
 environment, the runner detects and reuses it automatically. Verify it with:
 
 ```bash
-"$(conda info --base)/envs/csd-var/bin/python" -c \
-  'import torch, transformers, diffusers, safetensors; print(torch.cuda.is_available())'
+bash scripts/preflight_three_model_timing.sh
 ```
 
-If that prints `True`, skip directly to the run command below. Otherwise,
-create the dedicated environment as follows.
+If preflight passes, skip directly to the run command below. Otherwise, create
+the dedicated environment as follows.
 
 Create an isolated CSD-VAR environment and install the released requirements:
 

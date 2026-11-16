@@ -23,13 +23,15 @@ if command -v conda >/dev/null 2>&1; then conda_base="$(conda info --base)"; fi
 OURS_PYTHON="$(find_python "${OURS_PYTHON:-}" .venv/bin/python)" || { echo "Missing .venv. Run scripts/prepare_three_model_timing.sh" >&2; exit 1; }
 ARBOOTH_PYTHON="$(find_python "${ARBOOTH_PYTHON:-}" \
   /venv/arbooth-vico/bin/python "${conda_base:+$conda_base/envs/arbooth-vico/bin/python}" \
-  /opt/miniforge3/envs/arbooth-vico/bin/python /root/miniconda3/envs/arbooth-vico/bin/python)" || {
+  /opt/miniforge3/envs/arbooth-vico/bin/python /opt/conda/envs/arbooth-vico/bin/python \
+  /root/miniconda3/envs/arbooth-vico/bin/python)" || {
   echo "Missing arbooth-vico environment. Run scripts/prepare_three_model_timing.sh" >&2; exit 1;
 }
 CSD_PYTHON="$(find_python "${CSD_PYTHON:-}" \
   /venv/csd-var/bin/python /venv/benchmark-csdvar/bin/python \
   "${conda_base:+$conda_base/envs/csd-var/bin/python}" "${conda_base:+$conda_base/envs/benchmark-csdvar/bin/python}" \
-  /opt/miniforge3/envs/csd-var/bin/python /root/miniconda3/envs/csd-var/bin/python)" || {
+  /opt/miniforge3/envs/csd-var/bin/python /opt/conda/envs/csd-var/bin/python \
+  /root/miniconda3/envs/csd-var/bin/python)" || {
   echo "Missing CSD-VAR environment. Run scripts/prepare_three_model_timing.sh" >&2; exit 1;
 }
 
