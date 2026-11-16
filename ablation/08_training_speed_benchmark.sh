@@ -42,7 +42,7 @@ done
 echo "[infer] 3 configurations x 100 images; batch=$INFER_BATCH"
 "$PYTHON" ablation/ablation_training_timing.py --out_dir "$OUT" --offset-base "$OFFSET_BASE" \
   --subjects "$SUBJECT" --num_prompts 1 --num_samples 100 --batch "$INFER_BATCH" \
-  --cfg "$CFG" --tau "$TAU" --seed "$INFER_SEED" --prompt_name subject --progress \
+  --cfg "$CFG" --tau "$TAU" --seed "$INFER_SEED" --prompt_name subject --timing_warmup 1 --progress \
   --progress_desc "training timing" > "$OUT/logs/inference.log" 2>&1
 "$PYTHON" ablation/summarize_training_timing.py --experiment "$OUT" --subject "$SUBJECT" \
   | tee "$OUT/timing_summary.txt"

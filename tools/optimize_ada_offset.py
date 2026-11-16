@@ -172,6 +172,7 @@ def generate(infinity, vae, text_cond_tuple, scale_schedule, args, seed, negativ
 
 
 def optimize(args, infinity, vae, device, train_cond=None):
+    optimize_function_started = time.perf_counter()
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     paths = list_images(args.images)
@@ -192,11 +193,17 @@ def optimize(args, infinity, vae, device, train_cond=None):
     inps = [transform(p, tgt_h, tgt_w) for p in pils]  # [-1, 1]
     if args.hflip:
         inps += [x.flip(-1) for x in inps]
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    feature_cache_started = time.perf_counter()
     raw_features = []
     with torch.no_grad(), torch.autocast('cuda', enabled=False):
         for x in inps:
             raw_features.append(vae.encode_for_raw_features(x.unsqueeze(0).to(device), scale_schedule=vae_scale_schedule)[0])
     raw_features = torch.cat(raw_features, 0)
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    feature_cache_seconds = time.perf_counter() - feature_cache_started
     bsc = BitwiseSelfCorrection(vae, SimpleNamespace(
         noise_apply_layers=args.noise_apply_layers, noise_apply_requant=1, noise_apply_strength=args.noise_apply_strength,
         apply_spatial_patchify=args.apply_spatial_patchify, debug_bsc=0))
@@ -250,8 +257,15 @@ def optimize(args, infinity, vae, device, train_cond=None):
     targets = reference_row(inps[:len(paths)])  # bottom row of every saved grid: the training images (no h-flips)
     batches = shuffled_batches(len(raw_features), args.batch_size, args.seed)
     log = []
+    # Pure subject-personalization time. Model/T5/VAE loading, image transforms,
+    # one-time VAE feature caching and checkpoint writes are intentionally out.
+    optimization_ready = time.perf_counter()
+    optimization_step_durations = []
     for it in range(args.iters):
         stt = time.time()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        pure_step_started = time.perf_counter()
         optimizer.zero_grad(set_to_none=True)
         it_loss, it_acc = 0., 0.
         for _ in range(args.grad_accum):
@@ -270,6 +284,9 @@ def optimize(args, infinity, vae, device, train_cond=None):
             it_loss += loss.item() / args.grad_accum
             it_acc += bit_acc.item() / args.grad_accum
         optimizer.step()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        optimization_step_durations.append(time.perf_counter() - pure_step_started)
 
         log.append((it, it_loss, it_acc))
         if it % args.log_every == 0 or it == args.iters - 1:
@@ -290,6 +307,8 @@ def optimize(args, infinity, vae, device, train_cond=None):
             save_rows(f'{stem}_progress/it{it + 1:05d}{ext}', [samples, targets])
             set_train_mode(infinity, args.grad_checkpointing)  # generate() switched to eval()
 
+    optimization_loop_seconds = sum(optimization_step_durations)
+
     if args.save_offset:
         save_offset(args.save_offset, args.iters)
 
@@ -299,6 +318,9 @@ def optimize(args, infinity, vae, device, train_cond=None):
         with open(args.timing_file, 'w') as f:
             json.dump({
                 'total_wall_seconds': total_wall_seconds,
+                'optimization_loop_seconds': optimization_loop_seconds,
+                'feature_cache_seconds': feature_cache_seconds,
+                'optimization_setup_seconds': optimization_ready - optimize_function_started - feature_cache_seconds,
                 'checkpoint_save_seconds': checkpoint_save_seconds,
                 'preparation_seconds_excluding_checkpoint_io': total_wall_seconds - checkpoint_save_seconds,
                 'timing_scope': {
@@ -309,12 +331,20 @@ def optimize(args, infinity, vae, device, train_cond=None):
                                  'optional post-training reconstruction'],
                     'cuda_synchronized_before_checkpoint_io': True,
                 },
+                'pure_optimization_timing_scope': {
+                    'starts': 'after models, text condition, reference transforms, VAE features, offset parameter and optimizer are ready',
+                    'includes': ['batch selection', 'bitwise self-correction targets', 'forward', 'loss', 'backward', 'optimizer update'],
+                    'excludes': ['imports', 'model and text-encoder loading', 'reference transforms', 'VAE feature caching',
+                                 'checkpoint serialization and disk write', 'inference and image writes'],
+                    'cuda_synchronized_before_and_after': True,
+                },
                 'optimization': {
                     'iters': args.iters,
                     'batch_size': args.batch_size,
                     'grad_accum': args.grad_accum,
                     'effective_batch_size': args.batch_size * args.grad_accum,
                     'examples_processed_nominal': args.iters * args.batch_size * args.grad_accum,
+                    'per_step_seconds': optimization_step_durations,
                 },
                 'checkpoints': checkpoint_timings,
             }, f, indent=2)

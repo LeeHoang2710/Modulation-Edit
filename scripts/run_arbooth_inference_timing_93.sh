@@ -2,7 +2,9 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 if [ -z "${ARBOOTH_PYTHON:-}" ]; then
-  for candidate in /venv/arbooth-vico/bin/python /root/miniconda3/envs/arbooth-vico/bin/python /opt/conda/envs/arbooth-vico/bin/python; do
+  candidates=(/venv/arbooth-vico/bin/python /root/miniconda3/envs/arbooth-vico/bin/python /opt/conda/envs/arbooth-vico/bin/python /opt/miniforge3/envs/arbooth-vico/bin/python)
+  if command -v conda >/dev/null 2>&1; then candidates=("$(conda info --base)/envs/arbooth-vico/bin/python" "${candidates[@]}"); fi
+  for candidate in "${candidates[@]}"; do
     if [ -x "$candidate" ]; then ARBOOTH_PYTHON="$candidate"; break; fi
   done
 fi

@@ -15,6 +15,8 @@ def stats(values: list[float]) -> dict[str, float]:
     return {
         "generation_seconds_per_image_mean": statistics.mean(values),
         "generation_seconds_per_image_std": statistics.stdev(values) if len(values) > 1 else 0.0,
+        "pure_generation_seconds_per_image_mean": statistics.mean(values),
+        "pure_generation_seconds_per_image_std": statistics.stdev(values) if len(values) > 1 else 0.0,
         "generation_seconds_total": sum(values),
     }
 
@@ -34,6 +36,7 @@ def main() -> None:
     p.add_argument("--tau", type=float, default=0.5)
     p.add_argument("--pn", default="1M")
     p.add_argument("--vae-type", type=int, default=32)
+    p.add_argument("--warmup-runs", type=int, default=1)
     args = p.parse_args()
 
     subjects = [value.strip() for value in args.subjects.split(",") if value.strip()]
@@ -65,7 +68,7 @@ def main() -> None:
 
     arbooth = Path(args.arbooth_root).resolve()
     sys.path.insert(0, str(arbooth))
-    from tools.run_arbooth_for_eval import gen_one_img, load_tokenizer, load_transformer, load_visual_tokenizer
+    from tools.run_arbooth_for_eval import encode_prompt, gen_one_img, load_tokenizer, load_transformer, load_visual_tokenizer
     from infinity.utils.dynamic_resolution import dynamic_resolution_h_w
     import cv2
     import torch
@@ -105,6 +108,7 @@ def main() -> None:
     output.mkdir(parents=True, exist_ok=True)
 
     all_durations: list[float] = []
+    all_prompt_durations: list[float] = []
     subject_reports = []
     with torch.no_grad():
         for subject in subjects:
@@ -114,8 +118,32 @@ def main() -> None:
             subject_dir = output / subject
             subject_dir.mkdir(parents=True, exist_ok=True)
             durations = []
+            prompt_durations = []
+            if args.warmup_runs:
+                warm_prompt = item["prompt_templates"][0].format(f"<placeholder> {item['class_name']}")
+                warm_cond = encode_prompt(
+                    tokenizer, text_encoder, warm_prompt,
+                    special_token_id=token_id, special_token=infinity.special_token,
+                )
+                for warm_index in range(args.warmup_runs):
+                    gen_one_img(
+                        infinity, vae, tokenizer, text_encoder, warm_prompt,
+                        g_seed=args.seed - 10000 - warm_index, cfg_list=args.cfg, tau_list=args.tau,
+                        scale_schedule=scales, cfg_insertion_layer=[0], vae_type=args.vae_type,
+                        sampling_per_bits=1, special_token_id=token_id,
+                        special_token=infinity.special_token, text_cond_tuple=warm_cond,
+                    )
+                torch.cuda.synchronize()
             for prompt_index, template in enumerate(item["prompt_templates"]):
                 prompt = template.format(f"<placeholder> {item['class_name']}")
+                torch.cuda.synchronize()
+                prompt_started = time.perf_counter()
+                text_cond = encode_prompt(
+                    tokenizer, text_encoder, prompt,
+                    special_token_id=token_id, special_token=infinity.special_token,
+                )
+                torch.cuda.synchronize()
+                prompt_durations.append(time.perf_counter() - prompt_started)
                 torch.cuda.synchronize()
                 started = time.perf_counter()
                 image = gen_one_img(
@@ -124,13 +152,20 @@ def main() -> None:
                     scale_schedule=scales, cfg_insertion_layer=[0], vae_type=args.vae_type,
                     sampling_per_bits=1, special_token_id=token_id,
                     special_token=infinity.special_token,
+                    text_cond_tuple=text_cond,
                 )
                 torch.cuda.synchronize()
                 durations.append(time.perf_counter() - started)
                 cv2.imwrite(str(subject_dir / f"prompt_{prompt_index:02d}_seed_{args.seed}.jpg"), image.cpu().numpy())
-            report = {"subject": subject, "images": 31, "seed": args.seed, **stats(durations)}
+            report = {
+                "subject": subject, "images": 31, "seed": args.seed,
+                "prompt_encoding_seconds_mean": statistics.mean(prompt_durations),
+                "prompt_encoding_seconds_std": statistics.stdev(prompt_durations),
+                **stats(durations),
+            }
             subject_reports.append(report)
             all_durations.extend(durations)
+            all_prompt_durations.extend(prompt_durations)
             del infinity
             torch.cuda.empty_cache()
 
@@ -140,7 +175,10 @@ def main() -> None:
         "model_load_excluded": True, "image_write_excluded": True,
         "preparation_seconds": None,
         "preparation_note": "Released checkpoints were used; personalization/training was not rerun, so preparation time is unavailable rather than replaced by checkpoint loading.",
-        "timing_contract": "prompt encoding + autoregressive sampling + VAE decoding; excludes model loading and image writes",
+        "warmup_runs_per_subject": args.warmup_runs,
+        "prompt_encoding_seconds_mean": statistics.mean(all_prompt_durations),
+        "prompt_encoding_seconds_std": statistics.stdev(all_prompt_durations),
+        "timing_contract": "pure generation: autoregressive sampling + VAE decoding; excludes prompt encoding, model/checkpoint loading, device-to-host transfer and image writes; CUDA synchronized",
         **stats(all_durations), "per_subject": subject_reports,
         "per_image_seconds": all_durations,
     }

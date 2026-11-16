@@ -92,6 +92,8 @@ def add_args(parser):
     parser.add_argument('--top_p', type=float, default=0.97)
     parser.add_argument('--progress', action='store_true', help='show one image-level tqdm bar')
     parser.add_argument('--progress_desc', default='generation', help='label for --progress')
+    parser.add_argument('--timing_warmup', type=int, default=0,
+                        help='untimed generation batches per loaded subject/variant before measured images')
     parser.set_defaults(cfg='1.5', tau=1.0)
     return parser
 
@@ -165,8 +167,8 @@ def load_offset(variant, subject, subject_idx, num_scales, C, device):
 
 
 @torch.no_grad()
-def sample(infinity, vae, texts, offset, variant, scale_schedule, n, seed, args):
-    """n samples of one prompt -> list of HW3 uint8 BGR images"""
+def sample(infinity, vae, texts, offset, variant, scale_schedule, n, seed, args, return_device=False):
+    """Generate n images; optionally keep the postprocessed uint8 tensor on GPU for honest timing."""
     sos_all, gss_all, ca_all = texts
     num_scales = len(scale_schedule)
     blend_scales = set(parse_scales(variant.blend_scales, num_scales))
@@ -221,6 +223,8 @@ def sample(infinity, vae, texts, offset, variant, scale_schedule, n, seed, args)
             (b.sa if isinstance(b, CrossAttnBlock) else b.attn).kv_caching(False)
         img = vae.decode(summed_codes.squeeze(-3))
     img = ((img + 1) / 2).clamp(0, 1).permute(0, 2, 3, 1).mul_(255).to(torch.uint8).flip(dims=(3,))
+    if return_device:
+        return img
     return list(img.cpu().numpy())
 
 
@@ -268,6 +272,21 @@ def run(args, variants):
                         timing_records = json.load(f).get('images', [])
                 except (OSError, ValueError):
                     timing_records = []
+            if args.timing_warmup and sub['prompts']:
+                warm_texts = encode_texts(infinity, args.null_len, t5[sub['prompts'][0]])
+                if v.base_text == 'subject':
+                    warm_sos, warm_gss, warm_ca = warm_texts
+                    warm_sos, warm_gss = warm_sos.clone(), warm_gss.clone()
+                    warm_sos[NULL], warm_gss[NULL] = b_sos[PROMPT], b_gss[PROMPT]
+                    warm_texts = warm_sos, warm_gss, warm_ca
+                for warm_index in range(args.timing_warmup):
+                    sample(
+                        infinity, vae, warm_texts, offset, v, scale_schedule,
+                        min(args.batch, args.num_samples), args.seed - 10000 - warm_index, args,
+                        return_device=True,
+                    )
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
             stt, made = time.time(), 0
             for p_idx, prompt in enumerate(sub['prompts']):
                 pdir = osp.join(vdir, sub['subject'], f'prompt_{p_idx:02d}')
@@ -276,12 +295,6 @@ def run(args, variants):
                         progress.update(args.num_samples)
                     continue
                 os.makedirs(pdir, exist_ok=True)
-                # Unified inference timing contract (ours / ARBooth / CSD-VAR):
-                # prompt encoding + autoregressive sampling + VAE decoding.
-                # Frozen-model loading and image writes remain outside.
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize()
-                prompt_infer_started = time.perf_counter()
                 texts = encode_texts(infinity, args.null_len, t5[prompt])
                 if v.base_text == 'subject':
                     sos, gss, ca = texts
@@ -291,17 +304,20 @@ def run(args, variants):
                 for start in range(0, args.num_samples, args.batch):
                     n = min(args.batch, args.num_samples - start)
                     # the same seed for a (prompt, batch) in every variant -> paired comparisons
-                    if start == 0:
-                        infer_started = prompt_infer_started
-                    else:
-                        if torch.cuda.is_available():
-                            torch.cuda.synchronize()
-                        infer_started = time.perf_counter()
-                    imgs = sample(infinity, vae, texts, offset, v, scale_schedule, n, args.seed + 1000 * p_idx + start, args)
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
+                    infer_started = time.perf_counter()
+                    imgs_device = sample(
+                        infinity, vae, texts, offset, v, scale_schedule, n,
+                        args.seed + 1000 * p_idx + start, args, return_device=True,
+                    )
                     if torch.cuda.is_available():
                         torch.cuda.synchronize()
                     batch_latency_seconds = time.perf_counter() - infer_started
                     seconds_per_image = batch_latency_seconds / n
+                    # Device-to-host transfer, NumPy conversion, and JPEG writes
+                    # happen only after the synchronized generation interval.
+                    imgs = list(imgs_device.cpu().numpy())
                     for i, img in enumerate(imgs):
                         cv2.imwrite(osp.join(pdir, f'{start + i:02d}.jpg'), img)
                         timing_records.append({
@@ -329,7 +345,9 @@ def run(args, variants):
                         'inference_seconds_per_image_std': std,
                         'generation_seconds_per_image_mean': avg,
                         'generation_seconds_per_image_std': std,
-                        'timing_contract': 'prompt encoding + autoregressive sampling + VAE decoding; excludes model loading and image writes',
+                        'pure_generation_seconds_per_image_mean': avg,
+                        'pure_generation_seconds_per_image_std': std,
+                        'timing_contract': 'pure generation: autoregressive sampling + VAE decoding + GPU postprocess; excludes prompt/T5 encoding, model/checkpoint loading, device-to-host transfer and image writes',
                     }, f, indent=2)
                 print(f'   [{v.name}] {sub["subject"]}: {made} images, {(time.time() - stt) / made:.2f}s/img', flush=True)
     if progress is not None:

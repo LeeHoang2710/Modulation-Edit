@@ -14,7 +14,10 @@ for name in ("bs2_ga2_it200", "bs4_ga1_it200", "bs4_ga2_it100"):
     values = [float(x["inference_seconds"]) for x in infer["images"]]
     rows.append({
         "configuration": name,
-        "preparation_seconds": prep["total_wall_seconds"],
+        "preparation_seconds": prep["optimization_loop_seconds"],
+        "pure_optimization_seconds": prep["optimization_loop_seconds"],
+        "feature_cache_seconds": prep["feature_cache_seconds"],
+        "process_wall_seconds_diagnostic": prep["total_wall_seconds"],
         "preparation_seconds_to_materialized_offset": prep["total_wall_seconds"],
         "preparation_compute_seconds_excluding_checkpoint_io": prep["preparation_seconds_excluding_checkpoint_io"],
         "checkpoint_io_seconds": prep["checkpoint_save_seconds"],
@@ -23,6 +26,8 @@ for name in ("bs2_ga2_it200", "bs4_ga1_it200", "bs4_ga2_it100"):
         "inference_std_seconds": statistics.stdev(values),
         "generation_mean_seconds": statistics.mean(values),
         "generation_std_seconds": statistics.stdev(values),
+        "pure_generation_mean_seconds": statistics.mean(values),
+        "pure_generation_std_seconds": statistics.stdev(values),
     })
 with (root / "timing_summary.csv").open("w", newline="") as f:
     w = csv.DictWriter(f, fieldnames=rows[0]); w.writeheader(); w.writerows(rows)

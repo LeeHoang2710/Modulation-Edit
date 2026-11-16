@@ -1,7 +1,36 @@
-# ARBooth and offset-training timing benchmark
+# Three-model preparation and generation timing benchmark
 
 The commands below assume a Vast.ai CUDA development image and `/workspace` as
 the persistent workspace.
+
+## Recommended path (fresh Vast.ai instance)
+
+After cloning this branch, this single command installs or repairs all three
+environments, downloads the required assets, and runs a strict preflight:
+
+```bash
+cd /workspace/Modulation-Edit
+export HF_TOKEN='YOUR_HUGGINGFACE_READ_TOKEN'
+bash scripts/prepare_three_model_timing.sh
+```
+
+Do not start a long run unless it ends with:
+
+```text
+[ready] All three timing pipelines passed preflight.
+```
+
+Run all three benchmarks into a fresh timestamped directory:
+
+```bash
+bash scripts/run_three_model_timing.sh
+```
+
+The run finishes by writing `<timestamp>/timing_summary.csv`, while retaining
+all per-step, per-image, per-subject, warm-up, setup and I/O diagnostics in the
+method-specific JSON reports.
+
+The sections below retain the individual commands for rerunning one method.
 
 ## 1. Clone the timing branch
 
@@ -128,7 +157,12 @@ find weights/arbooth/by_subject -name '*.pth' -type l | sort
 bash scripts/run_arbooth_inference_timing_93.sh
 ```
 
-The default subjects are `brown_dog`, `black_cat`, and `alarm_clock`. This generates exactly `3 × 31 × 1 = 93` images with fixed seed 0. `output/timing/arbooth_3subjects_93/timing.json` reports CUDA-synchronized overall and per-subject timing; checkpoint loading and JPEG writing are excluded.
+The default subjects are `brown_dog`, `black_cat`, and `alarm_clock`. This
+generates exactly `3 × 31 × 1 = 93` images with fixed seed 0. One untimed
+warm-up runs after each subject checkpoint is loaded. T5 prompt encoding is
+reported separately. The primary CUDA-synchronized generation number includes
+only autoregressive generation and VAE decoding; checkpoint loading, prompt
+encoding, device-to-host transfer, and JPEG writing are excluded.
 
 The runner reads `subjects.csv` and the two official 31-prompt files directly
 from `/workspace/CSD-VAR/benchmark_data/vico_csd`; this branch does not require
@@ -153,16 +187,18 @@ This runs the same subject, optimization seed, training prompt, loss, learning r
 2. batch 4, gradient accumulation 1, 200 optimizer steps;
 3. batch 4, gradient accumulation 2, 100 optimizer steps.
 
-Results are written to `output/ablation_vico/24_training_speed_black_cat/timing_summary.csv`. The primary preparation number is time until a reusable offset checkpoint is fully materialized. Generation excludes model loading and image writing and records mean/std over 100 images for each configuration.
+Results are written to
+`output/ablation_vico/24_training_speed_black_cat/timing_summary.csv`. The
+primary `preparation_seconds`/`pure_optimization_seconds` metric is the exact
+CUDA-synchronized optimizer loop. Model loading, text encoding, reference
+preprocessing, one-time VAE feature caching, and checkpoint I/O are excluded.
+Generation runs one untimed warm-up and reports mean/std over 100 images.
 
-For our method, preparation starts before heavy Python/PyTorch imports and
-includes text encoding, VAE and Infinity loading, reference preprocessing,
-one-time VAE feature caching, all optimizer updates, and materializing the
-reusable offset checkpoint. CUDA is explicitly synchronized after the final
-optimizer update. Compute-only preparation and checkpoint I/O are also
-reported separately for diagnosis. Optional reconstruction generation is
-excluded. Therefore the three configurations use the same end-to-end
-preparation boundary.
+The old end-to-end number remains as `process_wall_seconds_diagnostic`.
+`feature_cache_seconds` and `checkpoint_io_seconds` expose overhead, while
+`preparation_seconds_to_materialized_offset` answers the deployment question
+“how long until the reusable offset file exists?” without conflating that with
+the pure optimization metric.
 
 To use another object or inference batch:
 
@@ -218,8 +254,10 @@ output/timing/csd_var_3subjects_93/images/
 output/timing/csd_var_3subjects_93/timing.json
 ```
 
-Two preparation measurements are reported for each subject:
+Preparation fields are reported separately for each subject:
 
+- `pure_optimization_seconds`: sum of CUDA-synchronized `trainer.train_step`
+  calls; model/data setup, SVD, logging and checkpoint writes are excluded;
 - `preparation_seconds_to_used_checkpoint`: SVD extraction plus training until
   every component of the step-150 checkpoint used for inference is written;
 - `preparation_full_200_step_seconds`: SVD extraction plus the complete
@@ -227,16 +265,18 @@ Two preparation measurements are reported for each subject:
 
 Weight downloads, input staging, and image copying are excluded. The benchmark
 creates an instrumented copy of released `inference.py`; upstream source is not
-modified. CUDA-synchronized generation timing includes prompt encoding,
-autoregressive sampling, and VQ-VAE decoding. Switti/checkpoint loading,
+modified. The three text conditions are encoded before the timer.
+CUDA-synchronized generation includes autoregressive sampling and VQ-VAE
+decoding. Switti/checkpoint loading, prompt encoding, GPU-to-CPU/PIL conversion,
 directory creation, JSON/PNG writing, and process startup are excluded. The
 full subprocess wall time remains in the report only as a diagnostic.
 
 All three generation reports now use the same timing contract:
 
 ```text
-include: prompt encoding + autoregressive sampling + image decoding
-exclude: frozen-model/checkpoint loading + process setup + image writing
+include: autoregressive sampling + image decoding + GPU postprocessing
+exclude: prompt encoding + frozen-model/checkpoint loading + process setup
+         + device-to-host/PIL conversion + image writing
 CUDA synchronize immediately before and after the measured region
 ```
 
