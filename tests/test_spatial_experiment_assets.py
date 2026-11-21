@@ -47,7 +47,8 @@ class SpatialExperimentAssetTests(unittest.TestCase):
         runner = (ROOT / "scripts" / "run_fat_dog_grey_cat_spatial_test.sh").read_text()
         self.assertIn("TRAIN_SEED=3", runner)
         self.assertIn("INFER_SEED=3", runner)
-        self.assertIn("--loss_scales 0,2-5", runner)
+        self.assertIn("--loss_scales 0-5", runner)
+        self.assertIn("--offset_infer_scales 0,2-5", runner)
         self.assertIn("--offset-scales 0,2-5", runner)
         self.assertIn("fat_dog_seed_003.png", runner)
         self.assertIn("grey_cat_seed_003.png", runner)
@@ -64,7 +65,8 @@ class SpatialExperimentAssetTests(unittest.TestCase):
         self.assertIn('--left-offset-path "$WORK_ROOT/brown_teddybear/offset.pth"', runner)
         self.assertIn('--right-offset-path "$WORK_ROOT/monster_toy/offset.pth"', runner)
         self.assertIn('--prompt "a brown teddy bear next to a monster toy"', runner)
-        self.assertIn('--loss_scales 0,2-5', runner)
+        self.assertIn('--loss_scales 0-5', runner)
+        self.assertIn('--offset_infer_scales 0,2-5', runner)
         self.assertIn('--offset-scales 0,2-5', runner)
 
     def test_vast_guide_does_not_initialize_submodules(self):

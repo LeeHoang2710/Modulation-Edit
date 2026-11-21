@@ -87,7 +87,7 @@ train_offset() {
   mkdir -p "$run_dir"
 
   if [[ "$REUSE_OFFSETS" == "1" && -f "$offset" ]] && \
-     "$PYTHON_BIN" -c 'import sys,torch; c=torch.load(sys.argv[1],map_location="cpu"); assert c.get("train_prompt")==sys.argv[2]; assert c.get("iters")==int(sys.argv[3]); assert c.get("batch_size")==int(sys.argv[4]); assert c.get("grad_accum")==int(sys.argv[5]); assert abs(c.get("lr")-float(sys.argv[6]))<1e-12; assert set(c.get("loss_scales",[]))=={0,2,3,4,5}; assert c.get("seed")==int(sys.argv[7]); assert c.get("noise_apply_layers")==int(sys.argv[8]); assert abs(c.get("noise_apply_strength")-float(sys.argv[9]))<1e-12' \
+     "$PYTHON_BIN" -c 'import sys,torch; c=torch.load(sys.argv[1],map_location="cpu"); assert c.get("train_prompt")==sys.argv[2]; assert c.get("iters")==int(sys.argv[3]); assert c.get("batch_size")==int(sys.argv[4]); assert c.get("grad_accum")==int(sys.argv[5]); assert abs(c.get("lr")-float(sys.argv[6]))<1e-12; assert set(c.get("loss_scales",[]))==set(range(6)); assert c.get("seed")==int(sys.argv[7]); assert c.get("noise_apply_layers")==int(sys.argv[8]); assert abs(c.get("noise_apply_strength")-float(sys.argv[9]))<1e-12' \
        "$offset" "$prompt" "$STEPS" "$BATCH_SIZE" "$GRAD_ACCUM" "$LR" "$TRAIN_SEED" "$BSC_LAYERS" "$BSC_STRENGTH"; then
     echo "[reuse] $subject -> $offset"
     return
@@ -100,7 +100,7 @@ train_offset() {
     --grad_checkpointing 1 --offset_mode per_scale \
     --iters "$STEPS" --batch_size "$BATCH_SIZE" --grad_accum "$GRAD_ACCUM" --lr "$LR" \
     --noise_apply_layers "$BSC_LAYERS" --noise_apply_strength "$BSC_STRENGTH" \
-    --loss_scales 0,2-5 --offset_infer_scales 0,2-5 \
+    --loss_scales 0-5 --offset_infer_scales 0,2-5 \
     --num_samples 1 --sample_every 0 \
     --save_offset "$offset" --save_file "" \
     2>&1 | tee "$run_dir/optimize.log"

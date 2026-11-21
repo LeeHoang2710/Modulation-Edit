@@ -9,8 +9,9 @@ generates one test image:
 - training and inference seed `3`.
 
 The fixed optimization configuration is 200 steps, batch size 4, gradient
-accumulation 1, learning rate `5e-3`, and per-scale offsets on the paper's
-main-variant scales `{0,2,3,4,5}`; scale 1 retains pretrained prompt behavior.
+accumulation 1, learning rate `5e-3`, and per-scale offset optimization on all
+first six scales `{0,1,2,3,4,5}`. The paper's main variant injects the learned
+offset on `{0,2,3,4,5}`; scale 1 retains pretrained prompt behavior.
 Bitwise labels and bitwise self-correction are enabled. BSC is requested for
 13 history layers with maximum bit-flip probability 0.3; because this run
 forwards through scale 5, the optimizer correctly caps corruption to the five
