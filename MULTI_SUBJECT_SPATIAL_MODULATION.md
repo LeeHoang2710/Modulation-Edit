@@ -154,7 +154,7 @@ ls -lh \
   weights/infinity/flan-t5-xl/config.json
 ```
 
-## 6. Run the complete one-image experiment
+## 6. Run the complete experiment
 
 ```bash
 cd /workspace/Modulation-Edit
@@ -168,13 +168,22 @@ The runner performs these operations in order:
 1. reads the committed first-party references from `references/vico_16/`;
 2. optimizes the fat-dog offset for 200 steps;
 3. optimizes the grey-cat offset for 200 steps;
-4. constructs left/right token-wise transformations using all six SharedAdaLN
+4. renders the fat-dog offset independently as a full-image control;
+5. renders the grey-cat offset independently as a full-image control;
+6. constructs left/right token-wise transformations using all six SharedAdaLN
    vectors;
-5. runs global self-attention over both regions;
-6. keeps prompt CA-KV enabled at every scale;
-7. writes exactly one generated image.
+7. runs global self-attention over both regions;
+8. keeps prompt CA-KV enabled at every scale;
+9. writes the final spatial composition.
 
-The final result is:
+The individual offset controls are written first:
+
+```text
+outputs/fat_dog_grey_cat_spatial_test/fat_dog_seed_003.png
+outputs/fat_dog_grey_cat_spatial_test/grey_cat_seed_003.png
+```
+
+The final spatial result is:
 
 ```text
 outputs/fat_dog_grey_cat_spatial_test/seed_003.png

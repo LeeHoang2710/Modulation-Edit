@@ -49,6 +49,8 @@ class SpatialExperimentAssetTests(unittest.TestCase):
         self.assertIn("INFER_SEED=3", runner)
         self.assertIn("--loss_scales 0,2-5", runner)
         self.assertIn("--offset-scales 0,2-5", runner)
+        self.assertIn("fat_dog_seed_003.png", runner)
+        self.assertIn("grey_cat_seed_003.png", runner)
         self.assertIn("seed_003.png", runner)
 
     def test_vast_guide_does_not_initialize_submodules(self):

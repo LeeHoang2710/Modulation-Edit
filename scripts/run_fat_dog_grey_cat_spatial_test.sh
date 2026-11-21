@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Train exactly two main-variant offsets, then generate one dog-left/cat-right image.
+# Train two main-variant offsets, preview each independently, then compose them spatially.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -108,12 +108,13 @@ train_offset() {
 train_offset fat_dog "a fat dog"
 train_offset black_cat "a grey cat"
 
-echo "[infer] prompt CA-KV enabled; dog=left, cat=right; one seed=$INFER_SEED"
+echo "[infer] previewing both offsets first, then composing dog=left/cat=right; prompt CA-KV enabled; seed=$INFER_SEED"
 "$PYTHON_BIN" tools/infer_two_offset_spatial.py \
   --left-offset-path "$WORK_ROOT/fat_dog/offset.pth" \
   --right-offset-path "$WORK_ROOT/black_cat/offset.pth" \
   --left-base-prompt "a fat dog" --right-base-prompt "a grey cat" \
   --joint-base-prompt "a fat dog and a grey cat" \
+  --left-preview-name fat_dog --right-preview-name grey_cat \
   --prompt "a dog next to a cat" --output-dir "$OUTPUT_DIR" \
   "${MODEL[@]}" \
   --alpha-schedule 0,0,0,0,0,0 --early-composition preserve-offset \
@@ -122,5 +123,11 @@ echo "[infer] prompt CA-KV enabled; dog=left, cat=right; one seed=$INFER_SEED"
   --num-samples 1 --seed "$INFER_SEED" \
   2>&1 | tee "$WORK_ROOT/infer.log"
 
-[[ -f "$OUTPUT_DIR/seed_003.png" ]] || { echo "Inference did not produce seed_003.png" >&2; exit 1; }
-echo "[complete] $OUTPUT_DIR/seed_003.png"
+for expected in fat_dog_seed_003.png grey_cat_seed_003.png seed_003.png; do
+  [[ -f "$OUTPUT_DIR/$expected" ]] || {
+    echo "Inference did not produce $expected" >&2
+    exit 1
+  }
+done
+echo "[complete] individual previews: $OUTPUT_DIR/fat_dog_seed_003.png, $OUTPUT_DIR/grey_cat_seed_003.png"
+echo "[complete] spatial composition: $OUTPUT_DIR/seed_003.png"

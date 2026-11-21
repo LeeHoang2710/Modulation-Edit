@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import os.path as osp
+import re
 import sys
 from pathlib import Path
 
@@ -70,6 +71,10 @@ def main() -> None:
                         help="defaults to train_prompt stored in the right checkpoint")
     parser.add_argument("--joint-base-prompt", default="",
                         help="CFG/base cross-attention prompt; defaults to '<left> and <right>'")
+    parser.add_argument("--left-preview-name", default="left_subject",
+                        help="filename prefix for the left offset's independent preview")
+    parser.add_argument("--right-preview-name", default="right_subject",
+                        help="filename prefix for the right offset's independent preview")
     parser.add_argument("--alpha-schedule", default="0.1,0.1,0.1,0.1,0.1",
                         help="main-variant prompt weights for consecutive early scales")
     parser.add_argument("--early-composition", choices=["interpolate", "preserve-offset"],
@@ -95,6 +100,10 @@ def main() -> None:
         parser.error("--split-ratio must be between 0 and 1")
     if args.num_samples < 1:
         parser.error("--num-samples must be positive")
+    for option, value in (("--left-preview-name", args.left_preview_name),
+                          ("--right-preview-name", args.right_preview_name)):
+        if re.fullmatch(r"[A-Za-z0-9_-]+", value) is None:
+            parser.error(f"{option} may contain only letters, digits, underscores, and hyphens")
     alpha = tuple(float(value) for value in args.alpha_schedule.split(",") if value.strip())
     if not alpha or any(value < 0 or value > 1 for value in alpha):
         parser.error("--alpha-schedule must contain comma-separated values in [0, 1]")
@@ -182,6 +191,33 @@ def main() -> None:
     dummy_offset = torch.zeros_like(left_offset[:1])
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    def render_single_subject(name, subject_cond, offset, active_scales):
+        """Render one learned offset globally before attempting composition."""
+        subject_texts = encode_texts_with_base(infinity, subject_cond, subject_cond)
+        subject_rows = [(NULL, PROMPT, True, 0.0), (NULL, NULL, True, 0.0)]
+        subject_sources = (
+            {scale: PROMPT for scale in range(len(scale_schedule))
+             if scale not in active_scales}
+            if args.late_gss == "prompt" else {}
+        )
+        for sample in range(args.num_samples):
+            seed = args.seed + sample
+            image = modspace_infer(
+                infinity, vae, subject_texts, offset, subject_rows, scale_schedule,
+                active_scales, set(), args.early_cfg, 1.0, seed, args,
+                cfg_by_scale=cfg_by_scale,
+                conditional_gss_source_by_scale=subject_sources,
+            )
+            path = output_dir / f"{name}_seed_{seed:03d}.png"
+            if not cv2.imwrite(str(path), image):
+                raise OSError(f"Could not write {path}")
+            print(f"[individual image] {path}", flush=True)
+
+    print("[phase 1/2] rendering each learned offset independently", flush=True)
+    render_single_subject(args.left_preview_name, left_cond, left_offset, left_active)
+    render_single_subject(args.right_preview_name, right_cond, right_offset, right_active)
+    print("[phase 2/2] rendering the spatial two-subject composition", flush=True)
     for sample in range(args.num_samples):
         seed = args.seed + sample
         image = modspace_infer(
@@ -211,6 +247,11 @@ def main() -> None:
         "cfg_by_scale": cfg_by_scale,
         "conditional_ca_kv": "joint prompt at every scale",
         "cfg_partner_ca_kv": "joint subject base at every scale",
+        "individual_previews": {
+            "left": args.left_preview_name,
+            "right": args.right_preview_name,
+            "prompts": [left_base, right_base],
+        },
         "seeds": list(range(args.seed, args.seed + args.num_samples)),
     }, indent=2) + "\n")
 
