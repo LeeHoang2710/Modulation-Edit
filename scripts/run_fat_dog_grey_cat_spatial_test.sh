@@ -3,8 +3,20 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-PYTHON_BIN="${VICO_PYTHON:-/venv/vico-modulation/bin/python}"
-[[ -x "$PYTHON_BIN" ]] || { echo "Missing Python runtime: $PYTHON_BIN" >&2; exit 1; }
+if [[ -n "${VICO_PYTHON:-}" ]]; then
+  PYTHON_BIN="$VICO_PYTHON"
+elif [[ -x /venv/vico-modulation/bin/python ]]; then
+  PYTHON_BIN=/venv/vico-modulation/bin/python
+elif command -v conda >/dev/null 2>&1; then
+  CONDA_BASE="$(conda info --base)"
+  PYTHON_BIN="$CONDA_BASE/envs/vico-modulation/bin/python"
+else
+  PYTHON_BIN=""
+fi
+[[ -n "$PYTHON_BIN" && -x "$PYTHON_BIN" ]] || {
+  echo "Missing vico-modulation Python. Run: bash scripts/setup_vico_vastai.sh" >&2
+  exit 1
+}
 
 STEPS=200
 BATCH_SIZE=4
