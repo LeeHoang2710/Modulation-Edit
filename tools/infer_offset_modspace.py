@@ -96,7 +96,8 @@ def encode_texts_with_base(infinity, base_cond, prompt_cond):
 
 @torch.no_grad()
 def modspace_infer(infinity, vae, texts, offset, rows, scale_schedule, offset_scales, delta_scales, cfg, tau, seed, args,
-                   scale_coefficients=None, cfg_by_scale=None, conditional_gss_source_by_scale=None):
+                   scale_coefficients=None, cfg_by_scale=None, conditional_gss_source_by_scale=None,
+                   modulation_transform=None):
     """
     rows: [cond] or [cond, uncond], each (cond_src, ca_src, use_offset, delta_w):
         sos / head adaLN / gss base from texts[cond_src], cross-attention on texts[ca_src],
@@ -109,6 +110,9 @@ def modspace_infer(infinity, vae, texts, offset, rows, scale_schedule, offset_sc
     conditional_gss_source_by_scale: optional {scale_index: NULL|PROMPT|NULL_P}
         source for only the conditional row's shared AdaLN modulation. The CFG
         partner retains its original source, normally NULL.
+    modulation_transform: optional callable ``(scale_index, scale_shape, gss) -> gss``.
+        It may replace the shared ``(B, 1, 6, C)`` modulation with a token-wise
+        ``(B, L, 6, C)`` tensor. This is used by multi-subject spatial composition.
     """
     sos_all, gss_all, ca_all = texts
     n = len(rows)
@@ -161,6 +165,14 @@ def modspace_infer(infinity, vae, texts, offset, rows, scale_schedule, offset_sc
                 gss_si = gss_si + use_offset_si * offset[0 if offset.shape[0] == 1 else si]
             if si in delta_scales:
                 gss_si = gss_si + delta_w_si * delta
+            if modulation_transform is not None:
+                gss_si = modulation_transform(si, pn, gss_si)
+                expected = (n, int(pn[0] * pn[1] * pn[2]), 6, infinity.C)
+                if gss_si.shape not in ((n, 1, 6, infinity.C), expected):
+                    raise ValueError(
+                        f"modulation_transform returned {tuple(gss_si.shape)} at scale {si}; "
+                        f"expected {(n, 1, 6, infinity.C)} or {expected}"
+                    )
             for block_idx, chunk in enumerate(infinity.block_chunks):
                 if (infinity.add_lvl_embeding_only_first_block and block_idx == 0) or not infinity.add_lvl_embeding_only_first_block:
                     last_stage = infinity.add_lvl_embeding(last_stage, si, scale_schedule, need_to_pad=0)
