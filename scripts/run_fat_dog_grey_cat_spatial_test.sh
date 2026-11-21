@@ -18,6 +18,23 @@ fi
   exit 1
 }
 
+"$PYTHON_BIN" - <<'PY'
+import torch
+
+if not torch.cuda.is_available():
+    raise SystemExit("CUDA is unavailable in the infinity-modulation environment")
+capability = torch.cuda.get_device_capability()
+architectures = torch.cuda.get_arch_list()
+print(f"[cuda] gpu={torch.cuda.get_device_name(0)!r} capability={capability} torch={torch.__version__} cuda={torch.version.cuda}")
+if capability == (12, 0) and "sm_120" not in architectures:
+    raise SystemExit(
+        "RTX 5090 requires a PyTorch wheel compiled for sm_120. "
+        "Run: bash scripts/repair_rtx5090_env.sh"
+    )
+print("[cuda] compiled architectures:", architectures)
+print("[cuda] smoke:", (torch.ones(1, device="cuda") + 1).item())
+PY
+
 STEPS=200
 BATCH_SIZE=4
 GRAD_ACCUM=1
