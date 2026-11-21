@@ -52,11 +52,11 @@ class SpatialExperimentAssetTests(unittest.TestCase):
     def test_blackwell_setup_cannot_reinstall_legacy_torch(self):
         setup = (ROOT / "scripts" / "setup_vastai_env.sh").read_text()
         runner = (ROOT / "scripts" / "run_fat_dog_grey_cat_spatial_test.sh").read_text()
-        self.assertIn('TORCH_VERSION="${TORCH_VERSION:-2.10.0}"', setup)
+        self.assertIn('TORCH_VERSION="${TORCH_VERSION:-2.9.1}"', setup)
         self.assertIn("https://download.pytorch.org/whl/cu128", setup)
-        self.assertIn("https://download.pytorch.org/whl/cu130", setup)
         self.assertIn("FILTERED_REQUIREMENTS", setup)
-        self.assertIn("sm_120", setup)
+        self.assertIn("prebuilt FlashAttention", setup)
+        self.assertNotIn("--no-build-isolation --no-deps", setup)
         self.assertIn("repair_rtx5090_env.sh", runner)
 
 

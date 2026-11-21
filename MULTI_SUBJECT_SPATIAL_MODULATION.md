@@ -85,13 +85,13 @@ cd /workspace/Modulation-Edit
 ## 4. Install the project environment
 
 The setup script creates only the `infinity-modulation` environment and
-installs PyTorch 2.10, FlashAttention 2.8.3, and the dependencies used by our
-Infinity implementation. CUDA 12.8 or newer is required for the RTX 5090's
-`sm_120` architecture. The script selects the official CUDA 12.8 wheel for a
-12.x toolkit and the CUDA 13.0 wheel for a 13.x toolkit. The requirements
-installation explicitly excludes its legacy PyTorch/FlashAttention pins, so
-it cannot silently downgrade the compatible GPU stack afterward. No
-comparison-method or evaluation environments are created.
+installs the official PyTorch 2.9.1 CUDA 12.8 wheel, torchvision 0.24.1, and
+the upstream prebuilt FlashAttention 2.8.3 wheel for Python 3.12/Torch 2.9.
+This combination supports the RTX 5090's `sm_120` architecture without a local
+CUDA compilation. Pip caching is disabled. The requirements installation also
+excludes its legacy PyTorch/FlashAttention pins, so it cannot silently
+downgrade the compatible GPU stack afterward. No comparison-method or
+evaluation environments are created.
 
 ```bash
 bash scripts/setup_vastai_env.sh
@@ -121,10 +121,12 @@ INFINITY_PYTHON=/venv/infinity-modulation/bin/python \
   bash scripts/repair_rtx5090_env.sh
 ```
 
-The repair checks for an RTX 5090-class `sm_120` GPU and CUDA toolkit 12.8 or
-newer, replaces the incompatible PyTorch wheel, builds/installs FlashAttention
-for `sm_120`, and runs both a CUDA tensor test and the same varlen packed
-FlashAttention operation used by prompt CA-KV. After it succeeds, rerun:
+First interrupt any existing `Building wheel for flash-attn` process with
+Ctrl-C. The repair then checks for an RTX 5090-class `sm_120` GPU, removes only
+abandoned pip build directories and pip's download cache, installs prebuilt
+wheels without compilation, and runs both a CUDA tensor test and the same
+varlen packed FlashAttention operation used by prompt CA-KV. After it succeeds,
+rerun:
 
 ```bash
 bash scripts/run_fat_dog_grey_cat_spatial_test.sh

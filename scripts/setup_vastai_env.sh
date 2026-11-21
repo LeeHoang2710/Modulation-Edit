@@ -10,33 +10,15 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_NAME="${INFINITY_CONDA_ENV:-infinity-modulation}"
 PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
-TORCH_VERSION="${TORCH_VERSION:-2.10.0}"
-TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.25.0}"
-FLASH_ATTENTION_MAX_JOBS="${FLASH_ATTENTION_MAX_JOBS:-2}"
+TORCH_VERSION="${TORCH_VERSION:-2.9.1}"
+TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.24.1}"
+TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}"
 FLASH_ATTENTION_VERSION="${FLASH_ATTENTION_VERSION:-2.8.3}"
-FLASH_ATTENTION_WHEEL="${FLASH_ATTENTION_WHEEL:-}"
+FLASH_ATTENTION_WHEEL="${FLASH_ATTENTION_WHEEL:-https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl}"
 
 if ! command -v conda >/dev/null 2>&1; then
     echo "conda was not found. Install Miniconda in the Vast.ai instance first." >&2
     exit 1
-fi
-command -v nvcc >/dev/null 2>&1 || {
-    echo "nvcc was not found. Use a CUDA development image (CUDA >= 12.8)." >&2
-    exit 1
-}
-NVCC_RELEASE="$(nvcc --version | sed -n 's/.*release \([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | tail -n1)"
-NVCC_MAJOR="${NVCC_RELEASE%%.*}"
-NVCC_MINOR="${NVCC_RELEASE#*.}"
-if (( NVCC_MAJOR < 12 || (NVCC_MAJOR == 12 && NVCC_MINOR < 8) )); then
-    echo "CUDA toolkit >= 12.8 is required for Blackwell; found ${NVCC_RELEASE}." >&2
-    exit 1
-fi
-if [[ -z "${TORCH_INDEX_URL:-}" ]]; then
-    if (( NVCC_MAJOR >= 13 )); then
-        TORCH_INDEX_URL="https://download.pytorch.org/whl/cu130"
-    else
-        TORCH_INDEX_URL="https://download.pytorch.org/whl/cu128"
-    fi
 fi
 
 CONDA_BASE="$(conda info --base)"
@@ -52,7 +34,7 @@ fi
 
 echo "Installing PyTorch ${TORCH_VERSION} and torchvision ${TORCHVISION_VERSION} from ${TORCH_INDEX_URL}"
 conda run -n "${ENV_NAME}" python -m pip install --upgrade pip setuptools wheel
-conda run -n "${ENV_NAME}" python -m pip install \
+conda run -n "${ENV_NAME}" python -m pip install --no-cache-dir \
     "torch==${TORCH_VERSION}" \
     "torchvision==${TORCHVISION_VERSION}" \
     --index-url "${TORCH_INDEX_URL}"
@@ -65,38 +47,20 @@ FILTERED_REQUIREMENTS="$(mktemp)"
 trap 'rm -f "${FILTERED_REQUIREMENTS}"' EXIT
 sed -E '/^[[:space:]]*(torch|torchvision|flash[_-]attn)([<=>[:space:]]|$)/d' \
     "${REPO_DIR}/requirements.txt" > "${FILTERED_REQUIREMENTS}"
-conda run -n "${ENV_NAME}" python -m pip install -r "${FILTERED_REQUIREMENTS}"
-conda run -n "${ENV_NAME}" python -m pip install \
+conda run -n "${ENV_NAME}" python -m pip install --no-cache-dir -r "${FILTERED_REQUIREMENTS}"
+conda run -n "${ENV_NAME}" python -m pip install --no-cache-dir \
     "huggingface_hub" \
     "ninja" \
     "packaging" \
     "psutil" \
     "opencv-fixer==0.2.5"
 
-# Infinity uses varlen FlashAttention for prompt CA-KV. FlashAttention 2.8.3
-# can compile sm_120 kernels with CUDA >= 12.8. A caller may provide a matching
-# prebuilt wheel; otherwise pip uses the release package and builds as needed.
-echo "Installing FlashAttention ${FLASH_ATTENTION_VERSION}"
-if [[ -n "${FLASH_ATTENTION_WHEEL}" ]]; then
-    conda run -n "${ENV_NAME}" python -m pip install --no-deps "${FLASH_ATTENTION_WHEEL}"
-else
-    FLASH_ARCHS="${FLASH_ATTN_CUDA_ARCHS:-}"
-    if nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n1 | grep -q '^12\.0'; then
-        FLASH_ARCHS="${FLASH_ARCHS:-120}"
-    fi
-    if [[ -n "${FLASH_ARCHS}" ]]; then
-        conda run -n "${ENV_NAME}" env \
-            MAX_JOBS="${FLASH_ATTENTION_MAX_JOBS}" \
-            FLASH_ATTN_CUDA_ARCHS="${FLASH_ARCHS}" \
-            python -m pip install --no-build-isolation --no-deps \
-            "flash-attn==${FLASH_ATTENTION_VERSION}"
-    else
-        conda run -n "${ENV_NAME}" env \
-            MAX_JOBS="${FLASH_ATTENTION_MAX_JOBS}" \
-            python -m pip install --no-build-isolation --no-deps \
-            "flash-attn==${FLASH_ATTENTION_VERSION}"
-    fi
-fi
+# Infinity uses varlen FlashAttention for prompt CA-KV. Use the upstream
+# Python-3.12/Torch-2.9/CUDA-12 wheel; never fall back to a multi-gigabyte local
+# CUDA source build on a rented Vast volume.
+echo "Installing prebuilt FlashAttention ${FLASH_ATTENTION_VERSION} wheel"
+conda run -n "${ENV_NAME}" python -m pip install --no-cache-dir --no-deps \
+    "${FLASH_ATTENTION_WHEEL}"
 
 echo "Checking the environment"
 conda run -n "${ENV_NAME}" python - <<'PY'

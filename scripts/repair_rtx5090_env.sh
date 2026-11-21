@@ -16,48 +16,50 @@ fi
   echo "Cannot find infinity-modulation Python; set INFINITY_PYTHON explicitly." >&2
   exit 1
 }
-command -v nvcc >/dev/null 2>&1 || {
-  echo "CUDA toolkit/nvcc is required to build FlashAttention for sm_120." >&2
-  exit 1
-}
-
 compute_cap="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n1 | tr -d ' ')"
 [[ "$compute_cap" == "12.0" ]] || {
   echo "This repair script is only for sm_120; detected compute capability $compute_cap." >&2
   exit 1
 }
-nvcc_release="$(nvcc --version | sed -n 's/.*release \([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | tail -n1)"
-"$PYTHON_BIN" - "$nvcc_release" <<'PY'
-import sys
-major, minor = map(int, sys.argv[1].split("."))
-if (major, minor) < (12, 8):
-    raise SystemExit(f"CUDA toolkit >= 12.8 is required for sm_120; found {sys.argv[1]}")
-PY
 
-TORCH_VERSION="${TORCH_VERSION:-2.10.0}"
-TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.25.0}"
+TORCH_VERSION="${TORCH_VERSION:-2.9.1}"
+TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.24.1}"
+TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}"
 FLASH_ATTENTION_VERSION="${FLASH_ATTENTION_VERSION:-2.8.3}"
-MAX_JOBS="${FLASH_ATTENTION_MAX_JOBS:-2}"
-nvcc_major="${nvcc_release%%.*}"
-if [[ -z "${TORCH_INDEX_URL:-}" ]]; then
-  if (( nvcc_major >= 13 )); then
-    TORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
-  else
-    TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
-  fi
+FLASH_ATTENTION_WHEEL="${FLASH_ATTENTION_WHEEL:-https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl}"
+
+# Refuse to clean while an earlier source build is still running. Interrupt it
+# with Ctrl-C first so its temporary directories are no longer in use.
+if pgrep -af 'pip.*flash-attn|ninja.*flash|nvcc.*flash' >/dev/null 2>&1; then
+  echo "A FlashAttention source build is still running. Press Ctrl-C in that terminal, then rerun this script." >&2
+  pgrep -af 'pip.*flash-attn|ninja.*flash|nvcc.*flash' >&2 || true
+  exit 1
 fi
+
+echo "[repair] removing abandoned pip build directories and download cache"
+"$PYTHON_BIN" -m pip cache purge >/dev/null 2>&1 || true
+"$PYTHON_BIN" - <<'PY'
+from pathlib import Path
+import shutil
+import tempfile
+
+root = Path(tempfile.gettempdir()).resolve()
+prefixes = ("pip-build-env-", "pip-install-", "pip-ephem-wheel-cache-", "pip-unpack-")
+for path in root.iterdir():
+    if path.is_dir() and path.name.startswith(prefixes):
+        print("removing", path)
+        shutil.rmtree(path)
+PY
 
 echo "[repair] installing PyTorch ${TORCH_VERSION} from ${TORCH_INDEX_URL}"
 "$PYTHON_BIN" -m pip uninstall -y flash-attn torch torchvision || true
-"$PYTHON_BIN" -m pip install --upgrade \
+"$PYTHON_BIN" -m pip install --no-cache-dir --upgrade \
   "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}" \
   --index-url "$TORCH_INDEX_URL"
-"$PYTHON_BIN" -m pip install --upgrade ninja packaging psutil
+"$PYTHON_BIN" -m pip install --no-cache-dir --upgrade ninja packaging psutil
 
-echo "[repair] building/installing FlashAttention ${FLASH_ATTENTION_VERSION} for sm_120"
-env MAX_JOBS="$MAX_JOBS" FLASH_ATTN_CUDA_ARCHS=120 \
-  "$PYTHON_BIN" -m pip install --no-build-isolation --no-deps \
-  "flash-attn==${FLASH_ATTENTION_VERSION}"
+echo "[repair] installing prebuilt FlashAttention ${FLASH_ATTENTION_VERSION} wheel (no compilation)"
+"$PYTHON_BIN" -m pip install --no-cache-dir --no-deps "$FLASH_ATTENTION_WHEEL"
 
 "$PYTHON_BIN" - <<'PY'
 import torch
