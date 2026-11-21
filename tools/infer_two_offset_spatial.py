@@ -144,7 +144,8 @@ def main() -> None:
     prompt_gss = texts[1][PROMPT:PROMPT + 1]
 
     def spatialize(scale_index, scale_shape, gss):
-        if scale_index >= len(alpha):
+        if (scale_index >= len(alpha)
+                or (scale_index not in left_active and scale_index not in right_active)):
             return gss
         value = alpha[scale_index]
         offset_weight = 1.0 - value if args.early_composition == "interpolate" else 1.0
@@ -169,7 +170,11 @@ def main() -> None:
     cfg_by_scale = [args.early_cfg] * early_count + [args.late_cfg] * (
         len(scale_schedule) - early_count
     )
-    late_sources = ({scale: PROMPT for scale in range(early_count, len(scale_schedule))}
+    spatial_scales = {
+        scale for scale in range(min(early_count, len(scale_schedule)))
+        if scale in left_active or scale in right_active
+    }
+    late_sources = ({scale: PROMPT for scale in range(len(scale_schedule)) if scale not in spatial_scales}
                     if args.late_gss == "prompt" else {})
     rows = [(NULL, PROMPT, False, 0.0), (NULL, NULL, False, 0.0)]
     print("[conditioning] conditional ca_kv=joint prompt at every scale; "

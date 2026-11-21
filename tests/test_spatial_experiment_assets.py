@@ -43,6 +43,14 @@ class SpatialExperimentAssetTests(unittest.TestCase):
         self.assertNotIn("models/DreamMatcher", runner)
         self.assertNotIn("setup_vico_vastai", runner)
 
+    def test_runner_uses_seed_three_and_paper_main_scales(self):
+        runner = (ROOT / "scripts" / "run_fat_dog_grey_cat_spatial_test.sh").read_text()
+        self.assertIn("TRAIN_SEED=3", runner)
+        self.assertIn("INFER_SEED=3", runner)
+        self.assertIn("--loss_scales 0,2-5", runner)
+        self.assertIn("--offset-scales 0,2-5", runner)
+        self.assertIn("seed_003.png", runner)
+
     def test_vast_guide_does_not_initialize_submodules(self):
         guide = (ROOT / "MULTI_SUBJECT_SPATIAL_MODULATION.md").read_text()
         self.assertNotIn("--recurse-submodules", guide)

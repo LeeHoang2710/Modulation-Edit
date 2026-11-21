@@ -6,14 +6,15 @@ generates one test image:
 - left region: the `fat_dog` reference object, conditioned as `a fat dog`;
 - right region: the `black_cat` reference object, conditioned as `a grey cat`;
 - joint prompt: `a dog next to a cat`;
-- one inference seed (`0`).
+- training and inference seed `3`.
 
 The fixed optimization configuration is 200 steps, batch size 4, gradient
-accumulation 1, learning rate `5e-3`, and per-scale offsets on scales 0-3.
+accumulation 1, learning rate `5e-3`, and per-scale offsets on the paper's
+main-variant scales `{0,2,3,4,5}`; scale 1 retains pretrained prompt behavior.
 Bitwise labels and bitwise self-correction are enabled. BSC is requested for
 13 history layers with maximum bit-flip probability 0.3; because this run
-forwards only scales 0-3, the optimizer correctly caps corruption to the three
-available preceding histories. Inference uses offset strength 0.9 and CFG 1.5.
+forwards through scale 5, the optimizer correctly caps corruption to the five
+available preceding histories. Inference uses offset strength 1.0 and CFG 1.5.
 Conditional cross-attention K/V comes from the joint prompt at every scale.
 
 ## 1. Create the Vast.ai machine
@@ -176,7 +177,7 @@ The runner performs these operations in order:
 The final result is:
 
 ```text
-outputs/fat_dog_grey_cat_spatial_test/seed_000.png
+outputs/fat_dog_grey_cat_spatial_test/seed_003.png
 ```
 
 Offsets and logs are saved under:
@@ -214,7 +215,7 @@ Run this from your local computer, replacing the Vast.ai host and port:
 
 ```bash
 scp -P YOUR_VAST_SSH_PORT \
-  root@YOUR_VAST_SSH_HOST:/workspace/Modulation-Edit/outputs/fat_dog_grey_cat_spatial_test/seed_000.png \
+  root@YOUR_VAST_SSH_HOST:/workspace/Modulation-Edit/outputs/fat_dog_grey_cat_spatial_test/seed_003.png \
   ~/Downloads/fat_dog_grey_cat_spatial_test.png
 ```
 

@@ -41,8 +41,8 @@ GRAD_ACCUM=1
 LR=5e-3
 BSC_LAYERS=13
 BSC_STRENGTH=0.3
-TRAIN_SEED=0
-INFER_SEED=0
+TRAIN_SEED=3
+INFER_SEED=3
 WORK_ROOT="${WORK_ROOT:-benchmark_work/fat_dog_grey_cat_spatial_test}"
 OUTPUT_DIR="${OUTPUT_DIR:-outputs/fat_dog_grey_cat_spatial_test}"
 REUSE_OFFSETS="${REUSE_OFFSETS:-1}"
@@ -87,7 +87,7 @@ train_offset() {
   mkdir -p "$run_dir"
 
   if [[ "$REUSE_OFFSETS" == "1" && -f "$offset" ]] && \
-     "$PYTHON_BIN" -c 'import sys,torch; c=torch.load(sys.argv[1],map_location="cpu"); assert c.get("train_prompt")==sys.argv[2]; assert c.get("iters")==200; assert c.get("batch_size")==4; assert c.get("grad_accum")==1; assert abs(c.get("lr")-5e-3)<1e-12; assert set(c.get("loss_scales",[]))==set(range(4)); assert c.get("noise_apply_layers")==13; assert abs(c.get("noise_apply_strength")-0.3)<1e-12' "$offset" "$prompt"; then
+     "$PYTHON_BIN" -c 'import sys,torch; c=torch.load(sys.argv[1],map_location="cpu"); assert c.get("train_prompt")==sys.argv[2]; assert c.get("iters")==200; assert c.get("batch_size")==4; assert c.get("grad_accum")==1; assert abs(c.get("lr")-5e-3)<1e-12; assert set(c.get("loss_scales",[]))=={0,2,3,4,5}; assert c.get("seed")==3; assert c.get("noise_apply_layers")==13; assert abs(c.get("noise_apply_strength")-0.3)<1e-12' "$offset" "$prompt"; then
     echo "[reuse] $subject -> $offset"
     return
   fi
@@ -99,7 +99,7 @@ train_offset() {
     --grad_checkpointing 1 --offset_mode per_scale \
     --iters "$STEPS" --batch_size "$BATCH_SIZE" --grad_accum "$GRAD_ACCUM" --lr "$LR" \
     --noise_apply_layers "$BSC_LAYERS" --noise_apply_strength "$BSC_STRENGTH" \
-    --loss_scales 0-3 --offset_infer_scales 0-3 \
+    --loss_scales 0,2-5 --offset_infer_scales 0,2-5 \
     --num_samples 1 --sample_every 0 \
     --save_offset "$offset" --save_file "" \
     2>&1 | tee "$run_dir/optimize.log"
@@ -116,11 +116,11 @@ echo "[infer] prompt CA-KV enabled; dog=left, cat=right; one seed=$INFER_SEED"
   --joint-base-prompt "a fat dog and a grey cat" \
   --prompt "a dog next to a cat" --output-dir "$OUTPUT_DIR" \
   "${MODEL[@]}" \
-  --alpha-schedule 0,0,0,0 --early-composition preserve-offset \
-  --offset-scales 0-3 --left-offset-scale 0.9 --right-offset-scale 0.9 \
+  --alpha-schedule 0,0,0,0,0,0 --early-composition preserve-offset \
+  --offset-scales 0,2-5 --left-offset-scale 1.0 --right-offset-scale 1.0 \
   --split-ratio 0.5 --early-cfg 1.5 --late-cfg 1.5 --late-gss prompt \
   --num-samples 1 --seed "$INFER_SEED" \
   2>&1 | tee "$WORK_ROOT/infer.log"
 
-[[ -f "$OUTPUT_DIR/seed_000.png" ]] || { echo "Inference did not produce seed_000.png" >&2; exit 1; }
-echo "[complete] $OUTPUT_DIR/seed_000.png"
+[[ -f "$OUTPUT_DIR/seed_003.png" ]] || { echo "Inference did not produce seed_003.png" >&2; exit 1; }
+echo "[complete] $OUTPUT_DIR/seed_003.png"
