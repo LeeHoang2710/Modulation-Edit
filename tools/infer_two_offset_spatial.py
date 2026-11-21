@@ -172,6 +172,8 @@ def main() -> None:
     late_sources = ({scale: PROMPT for scale in range(early_count, len(scale_schedule))}
                     if args.late_gss == "prompt" else {})
     rows = [(NULL, PROMPT, False, 0.0), (NULL, NULL, False, 0.0)]
+    print("[conditioning] conditional ca_kv=joint prompt at every scale; "
+          "CFG partner ca_kv=joint subject base", flush=True)
     dummy_offset = torch.zeros_like(left_offset[:1])
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -202,6 +204,8 @@ def main() -> None:
         "left_active_scales": sorted(left_active),
         "right_active_scales": sorted(right_active),
         "cfg_by_scale": cfg_by_scale,
+        "conditional_ca_kv": "joint prompt at every scale",
+        "cfg_partner_ca_kv": "joint subject base at every scale",
         "seeds": list(range(args.seed, args.seed + args.num_samples)),
     }, indent=2) + "\n")
 
