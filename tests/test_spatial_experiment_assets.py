@@ -53,6 +53,20 @@ class SpatialExperimentAssetTests(unittest.TestCase):
         self.assertIn("grey_cat_seed_003.png", runner)
         self.assertIn("seed_003.png", runner)
 
+    def test_teddy_monster_runner_contract(self):
+        runner = (ROOT / "scripts" / "run_teddy_bear_monster_toy_spatial_test.sh").read_text()
+        self.assertIn('BATCH_SIZE=2', runner)
+        self.assertIn('GRAD_ACCUM=2', runner)
+        self.assertIn('TRAIN_SEED=3', runner)
+        self.assertIn('INFER_SEED=3', runner)
+        self.assertIn('train_offset brown_teddybear "a brown teddy bear"', runner)
+        self.assertIn('train_offset monster_toy "a monster toy"', runner)
+        self.assertIn('--left-offset-path "$WORK_ROOT/brown_teddybear/offset.pth"', runner)
+        self.assertIn('--right-offset-path "$WORK_ROOT/monster_toy/offset.pth"', runner)
+        self.assertIn('--prompt "a brown teddy bear next to a monster toy"', runner)
+        self.assertIn('--loss_scales 0,2-5', runner)
+        self.assertIn('--offset-scales 0,2-5', runner)
+
     def test_vast_guide_does_not_initialize_submodules(self):
         guide = (ROOT / "MULTI_SUBJECT_SPATIAL_MODULATION.md").read_text()
         self.assertNotIn("--recurse-submodules", guide)
