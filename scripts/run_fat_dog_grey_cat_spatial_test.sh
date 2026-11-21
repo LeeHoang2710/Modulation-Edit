@@ -3,18 +3,18 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-if [[ -n "${VICO_PYTHON:-}" ]]; then
-  PYTHON_BIN="$VICO_PYTHON"
-elif [[ -x /venv/vico-modulation/bin/python ]]; then
-  PYTHON_BIN=/venv/vico-modulation/bin/python
+if [[ -n "${INFINITY_PYTHON:-}" ]]; then
+  PYTHON_BIN="$INFINITY_PYTHON"
+elif [[ -x /venv/infinity-modulation/bin/python ]]; then
+  PYTHON_BIN=/venv/infinity-modulation/bin/python
 elif command -v conda >/dev/null 2>&1; then
   CONDA_BASE="$(conda info --base)"
-  PYTHON_BIN="$CONDA_BASE/envs/vico-modulation/bin/python"
+  PYTHON_BIN="$CONDA_BASE/envs/infinity-modulation/bin/python"
 else
   PYTHON_BIN=""
 fi
 [[ -n "$PYTHON_BIN" && -x "$PYTHON_BIN" ]] || {
-  echo "Missing vico-modulation Python. Run: bash scripts/setup_vico_vastai.sh" >&2
+  echo "Missing infinity-modulation Python. Run: bash scripts/setup_vastai_env.sh" >&2
   exit 1
 }
 
@@ -45,17 +45,26 @@ for required in \
   weights/infinity/infinity_2b_reg.pth \
   weights/infinity/infinity_vae_d32reg.pth \
   weights/infinity/flan-t5-xl \
-  models/DreamMatcher/inputs/fat_dog \
-  models/DreamMatcher/inputs/black_cat; do
+  references/vico_16/fat_dog \
+  references/vico_16/black_cat; do
   [[ -e "$required" ]] || { echo "Missing required asset: $required" >&2; exit 1; }
 done
+
+REFERENCE_ROOT=references/vico_16
+reference_subjects="$(find "$REFERENCE_ROOT" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+reference_images="$(find "$REFERENCE_ROOT" -mindepth 2 -maxdepth 2 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) | wc -l | tr -d ' ')"
+[[ "$reference_subjects" == "16" && "$reference_images" == "94" ]] || {
+  echo "Incomplete first-party references: expected 16 folders/94 images, found $reference_subjects/$reference_images" >&2
+  exit 1
+}
+echo "[references] first-party ViCo inventory verified: 16 folders, 94 images"
 
 mkdir -p "$WORK_ROOT" "$OUTPUT_DIR"
 
 train_offset() {
   local subject="$1"
   local prompt="$2"
-  local images="models/DreamMatcher/inputs/$subject"
+  local images="$REFERENCE_ROOT/$subject"
   local run_dir="$WORK_ROOT/$subject"
   local offset="$run_dir/offset.pth"
   mkdir -p "$run_dir"

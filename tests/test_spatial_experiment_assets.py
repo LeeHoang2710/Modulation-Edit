@@ -1,0 +1,54 @@
+"""Contracts for the self-contained two-subject Vast.ai experiment."""
+from pathlib import Path
+import unittest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+REFERENCES = ROOT / "references" / "vico_16"
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
+EXPECTED_COUNTS = {
+    "alarm_clock": 5,
+    "black_cat": 5,
+    "brown_cat": 5,
+    "brown_dog": 5,
+    "brown_dog2": 5,
+    "brown_teddybear": 7,
+    "cat_statue": 6,
+    "duck_toy": 4,
+    "elephant_statue": 5,
+    "fat_dog": 6,
+    "monster_toy": 5,
+    "pink_sunglasses": 6,
+    "red_teapot": 5,
+    "red_vase": 6,
+    "tortoise_plushy": 12,
+    "wooden_barn": 7,
+}
+
+
+class SpatialExperimentAssetTests(unittest.TestCase):
+    def test_all_16_first_party_reference_sets_are_present(self):
+        actual = {}
+        for directory in REFERENCES.iterdir():
+            if directory.is_dir():
+                actual[directory.name] = sum(
+                    path.suffix.lower() in IMAGE_SUFFIXES for path in directory.iterdir()
+                )
+        self.assertEqual(actual, EXPECTED_COUNTS)
+        self.assertEqual(sum(actual.values()), 94)
+
+    def test_runner_has_no_comparison_method_dependency(self):
+        runner = (ROOT / "scripts" / "run_fat_dog_grey_cat_spatial_test.sh").read_text()
+        self.assertIn("references/vico_16", runner)
+        self.assertNotIn("models/DreamMatcher", runner)
+        self.assertNotIn("setup_vico_vastai", runner)
+
+    def test_vast_guide_does_not_initialize_submodules(self):
+        guide = (ROOT / "MULTI_SUBJECT_SPATIAL_MODULATION.md").read_text()
+        self.assertNotIn("--recurse-submodules", guide)
+        self.assertNotIn("git submodule update", guide)
+        self.assertIn("bash scripts/setup_vastai_env.sh", guide)
+
+
+if __name__ == "__main__":
+    unittest.main()

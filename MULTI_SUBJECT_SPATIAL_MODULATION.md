@@ -31,19 +31,18 @@ Do not use a runtime-only CUDA image: FlashAttention installation requires
 `nvcc`. A high-memory GPU is recommended because this test uses a true
 micro-batch of four 1M-resolution samples.
 
-## 2. Clone this feature branch
+## 2. Clone only our repository
 
-The branch must be pushed to GitHub before running these commands on a fresh
-instance.
+Use a normal clone and do **not** initialize submodules: the spatial experiment
+does not need DreamMatcher, ARBooth, or any other comparison-method source
+tree, data, or environment.
 
 ```bash
 cd /workspace
-git clone --recurse-submodules \
-  --branch feature/multi-subject-spatial-modulation \
+git clone --branch feature/multi-subject-spatial-modulation \
   --single-branch \
   https://github.com/LeeHoang2710/Modulation-Edit.git
 cd Modulation-Edit
-git submodule update --init --recursive
 git branch --show-current
 ```
 
@@ -51,6 +50,15 @@ The last command must print:
 
 ```text
 feature/multi-subject-spatial-modulation
+```
+
+The clone already contains all 16 reference-object folders under
+`references/vico_16/`. Verify the two used by this test and the full inventory:
+
+```bash
+find references/vico_16 -mindepth 1 -maxdepth 1 -type d | sort
+find references/vico_16/fat_dog -maxdepth 1 -type f | sort
+find references/vico_16/black_cat -maxdepth 1 -type f | sort
 ```
 
 ## 3. Install Miniconda if necessary
@@ -76,13 +84,15 @@ cd /workspace/Modulation-Edit
 
 ## 4. Install the project environment
 
-The setup script installs CUDA PyTorch 2.5.1, FlashAttention, and the remaining
-Infinity dependencies into the `vico-modulation` Conda environment.
+The setup script creates only the `infinity-modulation` environment and
+installs CUDA PyTorch 2.5.1, FlashAttention, and the dependencies used by our
+Infinity implementation. It does not create environments for comparison
+methods or evaluation repositories.
 
 ```bash
-bash scripts/setup_vico_vastai.sh
+bash scripts/setup_vastai_env.sh
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate vico-modulation
+conda activate infinity-modulation
 python - <<'PY'
 import torch
 import flash_attn
@@ -104,8 +114,7 @@ The experiment expects the model, VAE, and T5 encoder under
 # Optional for gated/authenticated downloads:
 # export HF_TOKEN='hf_...'
 
-INFINITY_CONDA_ENV=vico-modulation \
-  bash scripts/download_vastai_weights.sh weights/infinity
+bash scripts/download_vastai_weights.sh weights/infinity
 ```
 
 Verify the expected assets:
@@ -122,19 +131,20 @@ ls -lh \
 ```bash
 cd /workspace/Modulation-Edit
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate vico-modulation
+conda activate infinity-modulation
 bash scripts/run_fat_dog_grey_cat_spatial_test.sh
 ```
 
 The runner performs these operations in order:
 
-1. optimizes the fat-dog offset for 200 steps;
-2. optimizes the grey-cat offset for 200 steps;
-3. constructs left/right token-wise transformations using all six SharedAdaLN
+1. reads the committed first-party references from `references/vico_16/`;
+2. optimizes the fat-dog offset for 200 steps;
+3. optimizes the grey-cat offset for 200 steps;
+4. constructs left/right token-wise transformations using all six SharedAdaLN
    vectors;
-4. runs global self-attention over both regions;
-5. keeps prompt CA-KV enabled at every scale;
-6. writes exactly one generated image.
+5. runs global self-attention over both regions;
+6. keeps prompt CA-KV enabled at every scale;
+7. writes exactly one generated image.
 
 The final result is:
 

@@ -47,6 +47,12 @@ results/
 debug/
 weights
 checkpoints
+
+# First-party ViCo references required by our spatial-modulation experiments.
+# Keep these even though image extensions and data directories are ignored.
+!references/
+!references/vico_16/
+!references/vico_16/**
 ref.py
 wandb
 .DS_Store
